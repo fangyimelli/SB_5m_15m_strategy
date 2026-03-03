@@ -1,6 +1,13 @@
 # PR Notes
 
 ## What changed (latest)
+
+- 2026-03-03 HUD-only/label-capacity cleanup on current branch:
+  - Removed dashboard `table` rendering and related table text refresh logic; HUD is now the only status surface.
+  - Reserved label capacity for HUD in lifecycle cleanup (`reservedLabels=2`, `capForSignals=min(maxSignalLabels, max(1, maxLabelsCap-reservedLabels))`) so signal labels cannot starve HUD label creation.
+  - Changed HUD defaults/content: `hud_y_anchor` default to `High`, keep single `barstate.islast` HUD label, and switched to vertical ✅/⛔ rows (`日期/TradeDay/Grade/NY/BOS/FVG/Retest/Blue1/Blue2/Blue3/ScoreA/ScoreA+`).
+  - Enforced Blue behavior: Blue1/Blue2 alert-only (no signal labels, no TP/SL), Blue3-only alert + Entry/TP(+50p)/SL drawing.
+  - Restored scanner marker text from `FGD*`/`FRD*` to `FGD`/`FRD`.
 - Fixed focus-date off-by-one and focus/trade-day state freeze issues:
   - Renamed input to `focus_input = input.time(...)` and derive `focusY/focusM/focusD` with timezone parameter.
   - `focusAnchor = timestamp(timezone, y, m, d, 09, 30)` remains NY-aligned.

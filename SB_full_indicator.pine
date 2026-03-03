@@ -1,18 +1,15 @@
 //@version=6
 // NOTE: This script intentionally contains exactly ONE declaration statement: indicator().
-indicator("SB Full Manual Workflow (Indicator)", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=200)
+indicator("SB Full Manual Workflow (Indicator)", overlay=true, max_labels_count=50, max_lines_count=50, max_boxes_count=20)
 
 chartTickerStd = ticker.standard(syminfo.tickerid)
 
 // =============================
 // 0) Inputs
 // =============================
-mode = input.string("Portfolio(4 symbols)", "Mode", options=["Portfolio(4 symbols)", "Chart(single)"])
-
-symbol1 = input.symbol("EURUSD", "Portfolio Symbol 1")
-symbol2 = input.symbol("GBPUSD", "Portfolio Symbol 2")
-symbol3 = input.symbol("USDJPY", "Portfolio Symbol 3")
-symbol4 = input.symbol("XAUUSD", "Portfolio Symbol 4")
+maxLabelsCap = input.int(50, "Hard cap labels", minval=10, maxval=50)
+maxLinesCap = input.int(50, "Hard cap lines", minval=10, maxval=50)
+maxBoxesCap = input.int(20, "Hard cap boxes", minval=5, maxval=20)
 
 timezoneInput = input.string("America/New_York", "Timezone")
 nySession = input.session("0930-1130", "NY Session")
@@ -79,9 +76,9 @@ showTargetLabel = input.bool(true, "Show TP label")
 showSlLabel = input.bool(true, "Show SL label")
 drawOnChartSymbolOnly = input.bool(true, "Draw on chart symbol only")
 showChartLabels = input.string("Signals only", "Chart labels", options=["Signals only", "Off"])
-showBlockedLabels = input.bool(false, "Show blocked labels on chart (default off)")
+showBlockedLabels = input.bool(false, "Show blocked labels on chart (deprecated)")
 maxSignalLabels = input.int(30, "Max signal labels", minval=1, maxval=200)
-allowDrawAllSymbols = input.bool(false, "Portfolio: draw all symbols")
+allowDrawAllSymbols = input.bool(false, "Draw all symbols (deprecated, single symbol mode)")
 
 scoreEnabled = input.bool(true, "Score enabled")
 scoreThresholdA = input.int(75, "A threshold", minval=0, maxval=100)
@@ -92,9 +89,9 @@ scoreWBos = input.int(25, "Score weight BOS", minval=0, maxval=100)
 scoreWFvg = input.int(20, "Score weight FVG", minval=0, maxval=100)
 scoreWEntry = input.int(10, "Score weight Retest/Blue", minval=0, maxval=100)
 
-dailyMaxTrades = input.int(2, "Portfolio daily max trades", minval=1, maxval=5)
-uniqueSymbolsOnly = input.bool(true, "Portfolio unique symbols only")
-tieBreaker = input.string("order_1_2_3_4", "Tie breaker", options=["order_1_2_3_4", "bestScore"])
+dailyMaxTrades = input.int(2, "Daily max trades", minval=1, maxval=5)
+uniqueSymbolsOnly = input.bool(false, "Unique symbols only (deprecated, single symbol mode)")
+tieBreaker = input.string("order_1_2_3_4", "Tie breaker (deprecated)", options=["order_1_2_3_4", "bestScore"])
 
 trainingMode = input.bool(false, "Training mode")
 tradeDayOnly = input.bool(true, "Trade Day only (enable full flow only on Trade Day)")
@@ -186,78 +183,72 @@ f_session_minutes(_sess) =>
 // =============================
 // Per-symbol state arrays (0..3)
 // =============================
-var arrSyms = array.new_string(4, "")
+var arrSyms = array.new_string(1, "")
 if barstate.isfirst
-    array.set(arrSyms, 0, symbol1)
-    array.set(arrSyms, 1, symbol2)
-    array.set(arrSyms, 2, symbol3)
-    array.set(arrSyms, 3, symbol4)
-array.set(arrSyms, 0, symbol1)
-array.set(arrSyms, 1, symbol2)
-array.set(arrSyms, 2, symbol3)
-array.set(arrSyms, 3, symbol4)
+    array.set(arrSyms, 0, chartTickerStd)
+array.set(arrSyms, 0, chartTickerStd)
 
-var arrState = array.new_int(4, STATE_IDLE)
-var arrAsiaH = array.new_float(4, na)
-var arrAsiaL = array.new_float(4, na)
-var arrSweepDir = array.new_int(4, 0)
-var arrSweepTime = array.new_int(4, na)
-var arrBosDir = array.new_int(4, 0)
-var arrBosLevel = array.new_float(4, na)
-var arrBosTime = array.new_int(4, na)
-var arrFvgU = array.new_float(4, na)
-var arrFvgL = array.new_float(4, na)
-var arrFvgM = array.new_float(4, na)
-var arrFvgTime = array.new_int(4, na)
-var arrFvgMit = array.new_bool(4, false)
-var arrRetU = array.new_float(4, na)
-var arrRetL = array.new_float(4, na)
-var arrBlue1T = array.new_int(4, na)
-var arrBlue2T = array.new_int(4, na)
-var arrBlue3T = array.new_int(4, na)
-var arrEntry = array.new_float(4, na)
-var arrTp = array.new_float(4, na)
-var arrSl = array.new_float(4, na)
-var arrLastAlertB1 = array.new_int(4, na)
-var arrLastAlertB2 = array.new_int(4, na)
-var arrLastAlertB3 = array.new_int(4, na)
-var arrDoneToday = array.new_bool(4, false)
-var arrLastDay = array.new_int(4, na)
-var arrSweepUsed = array.new_bool(4, false)
-var arrSwingHigh = array.new_float(4, na)
-var arrSwingLow = array.new_float(4, na)
+var arrState = array.new_int(1, STATE_IDLE)
+var arrAsiaH = array.new_float(1, na)
+var arrAsiaL = array.new_float(1, na)
+var arrSweepDir = array.new_int(1, 0)
+var arrSweepTime = array.new_int(1, na)
+var arrBosDir = array.new_int(1, 0)
+var arrBosLevel = array.new_float(1, na)
+var arrBosTime = array.new_int(1, na)
+var arrFvgU = array.new_float(1, na)
+var arrFvgL = array.new_float(1, na)
+var arrFvgM = array.new_float(1, na)
+var arrFvgTime = array.new_int(1, na)
+var arrFvgMit = array.new_bool(1, false)
+var arrRetU = array.new_float(1, na)
+var arrRetL = array.new_float(1, na)
+var arrBlue1T = array.new_int(1, na)
+var arrBlue2T = array.new_int(1, na)
+var arrBlue3T = array.new_int(1, na)
+var arrEntry = array.new_float(1, na)
+var arrTp = array.new_float(1, na)
+var arrSl = array.new_float(1, na)
+var arrLastAlertB1 = array.new_int(1, na)
+var arrLastAlertB2 = array.new_int(1, na)
+var arrLastAlertB3 = array.new_int(1, na)
+var arrDoneToday = array.new_bool(1, false)
+var arrLastDay = array.new_int(1, na)
+var arrSweepUsed = array.new_bool(1, false)
+var arrSwingHigh = array.new_float(1, na)
+var arrSwingLow = array.new_float(1, na)
 
-var arrScoreA = array.new_float(4, 0)
-var arrScoreAPlus = array.new_float(4, 0)
-var arrBias = array.new_int(4, 0)
-var arrInNy = array.new_bool(4, false)
-var arrBlue1Now = array.new_bool(4, false)
-var arrBlue2Now = array.new_bool(4, false)
-var arrBlue3Now = array.new_bool(4, false)
-var arrBlocked = array.new_string(4, "")
-var arrIsFgd = array.new_bool(4, false)
-var arrIsFrd = array.new_bool(4, false)
-var arrIsTradeDay = array.new_bool(4, false)
-var arrScannerFgdPulse = array.new_bool(4, false)
-var arrScannerFrdPulse = array.new_bool(4, false)
-var arrScannerTradePulse = array.new_bool(4, false)
-var arrLastDBarTime = array.new_int(4, na)
-var arrRectToday = array.new_bool(4, false)
-var arrRectPrev = array.new_bool(4, false)
-var arrRectDayKey = array.new_int(4, na)
-var arrRectHH = array.new_float(4, na)
-var arrRectLL = array.new_float(4, na)
-var arrGreatReason = array.new_string(4, "")
-var arrDisplayOk = array.new_bool(4, true)
+var arrScoreA = array.new_float(1, 0)
+var arrScoreAPlus = array.new_float(1, 0)
+var arrBias = array.new_int(1, 0)
+var arrInNy = array.new_bool(1, false)
+var arrBlue1Now = array.new_bool(1, false)
+var arrBlue2Now = array.new_bool(1, false)
+var arrBlue3Now = array.new_bool(1, false)
+var arrBlocked = array.new_string(1, "")
+var arrIsFgd = array.new_bool(1, false)
+var arrIsFrd = array.new_bool(1, false)
+var arrIsTradeDay = array.new_bool(1, false)
+var arrScannerFgdPulse = array.new_bool(1, false)
+var arrScannerFrdPulse = array.new_bool(1, false)
+var arrScannerTradePulse = array.new_bool(1, false)
+var arrLastDBarTime = array.new_int(1, na)
+var arrRectToday = array.new_bool(1, false)
+var arrRectPrev = array.new_bool(1, false)
+var arrRectDayKey = array.new_int(1, na)
+var arrRectHH = array.new_float(1, na)
+var arrRectLL = array.new_float(1, na)
+var arrGreatReason = array.new_string(1, "")
+var arrDisplayOk = array.new_bool(1, true)
 
 // Training counters
-var arrSweepCount = array.new_int(4, 0)
-var arrBosCount = array.new_int(4, 0)
-var arrFvgCount = array.new_int(4, 0)
-var arrMitCount = array.new_int(4, 0)
-var arrB1Count = array.new_int(4, 0)
-var arrB2Count = array.new_int(4, 0)
-var arrB3Count = array.new_int(4, 0)
+var arrSweepCount = array.new_int(1, 0)
+var arrBosCount = array.new_int(1, 0)
+var arrFvgCount = array.new_int(1, 0)
+var arrMitCount = array.new_int(1, 0)
+var arrB1Count = array.new_int(1, 0)
+var arrB2Count = array.new_int(1, 0)
+var arrB3Count = array.new_int(1, 0)
 
 // Portfolio slots
 var int todayTradeCount = 0
@@ -271,7 +262,7 @@ if na(portfolioDayKey) or dayNow != portfolioDayKey
     todayTradeCount := 0
     todaySym1 := ""
     todaySym2 := ""
-    for i = 0 to 3
+    for i = 0 to 0
         array.set(arrDoneToday, i, false)
 
 activeGrade = liveGradeMode == "Manual" ? manualGrade : (autoDowngrade ? "A" : manualGrade)
@@ -294,8 +285,8 @@ inFocusDisplayWindow = focusMode ? (time >= (focusWindow == "FullDay" ? focusDay
 // =============================
 // Core per-symbol engine
 // =============================
-for i = 0 to 3
-    sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, i))
+for i = 0 to 0
+    sym = chartTickerStd
 
     [inNy5, inNy5Prev, inAsia5, h5, l5, o5, c5, ema5] = request.security(sym, "5", [not na(time("5", nySession, timezoneInput)), not na(time("5", nySession, timezoneInput))[1], not na(time("5", asiaSession, timezoneInput)), high, low, open, close, ta.ema(close, 20)])
     nyStart5 = inNy5 and not inNy5Prev
@@ -546,7 +537,7 @@ for i = 0 to 3
         array.set(arrBlue1T, i, time)
         array.set(arrBlue1Now, i, true)
         array.set(arrB1Count, i, array.get(arrB1Count, i) + 1)
-        if consumeSlotOn == "Blue1" and mode == "Portfolio(4 symbols)"
+        if consumeSlotOn == "Blue1"
             if todayTradeCount < dailyMaxTrades
                 todayTradeCount += 1
                 if todaySym1 == ""
@@ -596,47 +587,17 @@ for i = 0 to 3
     displayOk = math.max(scoreA, scoreAplus) >= minScoreToDisplay
     array.set(arrDisplayOk, i, displayOk)
 
-// Tie-breaker & slot consume when Blue3
-if mode == "Portfolio(4 symbols)"
-    winner = -1
-    if tieBreaker == "order_1_2_3_4"
-        for i = 0 to 3
-            if winner == -1 and array.get(arrBlue3Now, i)
-                winner := i
-    else
-        best = -1.0
-        for i = 0 to 3
-            if array.get(arrBlue3Now, i)
-                sc = isAPlus ? array.get(arrScoreAPlus, i) : array.get(arrScoreA, i)
-                if sc > best
-                    best := sc
-                    winner := i
-    for i = 0 to 3
-        if array.get(arrBlue3Now, i)
-            sym = array.get(arrSyms, i)
-            allow = (i == winner) and todayTradeCount < dailyMaxTrades and (not uniqueSymbolsOnly or (todaySym1 != sym and todaySym2 != sym))
-            if allow
-                todayTradeCount += 1
-                if todaySym1 == ""
-                    todaySym1 := sym
-                else if todaySym2 == ""
-                    todaySym2 := sym
-            else
-                array.set(arrBlue3Now, i, false)
-                array.set(arrState, i, STATE_BLUE2)
-                array.set(arrBlocked, i, "Slot blocked by tie-break/daily limit")
-
 // =============================
 // Alerts + Drawing (chart symbol focus)
 // =============================
-chartIdx = mode == "Chart(single)" ? 0 : (chartTickerStd == ticker.standard(symbol1) ? 0 : chartTickerStd == ticker.standard(symbol2) ? 1 : chartTickerStd == ticker.standard(symbol3) ? 2 : chartTickerStd == ticker.standard(symbol4) ? 3 : 0)
+chartIdx = 0
 
 b1NowChartRaw = array.get(arrBlue1Now, chartIdx)
 b2NowChartRaw = array.get(arrBlue2Now, chartIdx)
 b3NowChartRaw = array.get(arrBlue3Now, chartIdx)
 chartDir = array.get(arrBosDir, chartIdx)
 chartBos = array.get(arrBosLevel, chartIdx)
-chartSym = mode == "Chart(single)" ? chartTickerStd : array.get(arrSyms, chartIdx)
+chartSym = chartTickerStd
 chartScore = isAPlus ? array.get(arrScoreAPlus, chartIdx) : array.get(arrScoreA, chartIdx)
 shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and inFocusDisplayWindow and array.get(arrDisplayOk, chartIdx)
 b1NowChart = shouldDraw and b1NowChartRaw
@@ -651,7 +612,6 @@ var box fvgBox = na
 var box rectBox = na
 var label tpLbl = na
 var label slLbl = na
-var label blockedLbl = na
 var label[] signalLabels = array.new_label()
 var int lastDrawnBosTime = na
 var int lastDrawnFvgTime = na
@@ -737,7 +697,13 @@ if lineLifecycle == "Session End" and not array.get(arrInNy, chartIdx)
     if not na(slLine)
         line.delete(slLine)
         slLine := na
-while array.size(signalLabels) > maxSignalLabels
+    if not na(tpLbl)
+        label.delete(tpLbl)
+        tpLbl := na
+    if not na(slLbl)
+        label.delete(slLbl)
+        slLbl := na
+while array.size(signalLabels) > math.min(maxSignalLabels, maxLabelsCap)
     oldLb = array.shift(signalLabels)
     if not na(oldLb)
         label.delete(oldLb)
@@ -753,6 +719,12 @@ if lineLifecycle == "Day End" and dayChanged
     if not na(slLine)
         line.delete(slLine)
         slLine := na
+    if not na(tpLbl)
+        label.delete(tpLbl)
+        tpLbl := na
+    if not na(slLbl)
+        label.delete(slLbl)
+        slLbl := na
 
 // Chart marks
 
@@ -799,30 +771,25 @@ plotshape(scannerFrdNow, title="FRD Scanner", text="FRD*", style=shape.labeldown
 plotshape(scannerTradeNow, title="TRADE DAY", text="TRADE DAY", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
 
 blockedChart = array.get(arrBlocked, chartIdx)
-if not showBlockedLabels and not na(blockedLbl)
-    label.delete(blockedLbl)
-    blockedLbl := na
-if showBlockedLabels and barstate.islast
-    if not na(blockedLbl)
-        label.delete(blockedLbl)
-        blockedLbl := na
-    if blockedChart != "" and (not tradeDayOnly or array.get(arrIsTradeDay, chartIdx))
-        blockedLbl := label.new(bar_index, high, "BLOCKED: " + blockedChart, style=label.style_label_down, color=color.new(color.red, 80), textcolor=color.white, size=size.tiny)
 
 // =============================
 // Dashboard
 // =============================
-var table dash = table.new(position.top_right, 15, 7, border_width=1)
-if barstate.islast
+var table dash = table.new(position.top_right, 15, 3, border_width=1)
+if barstate.isfirst
     table.cell(dash, 0, 0, "SB Dashboard", bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 1, 0, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades), bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 2, 0, "Used Symbols: " + todaySym1 + " " + todaySym2, bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 3, 0, focusMode ? "Focus: " + str.tostring(focusY) + "-" + str.tostring(focusM) + "-" + str.tostring(focusD) + " 09:30" : "Focus: Live", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 1, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 2, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
     headers = array.from("Symbol", "Bias【SB必要】", "MRN", "NY", "Asia", "Sweep", "BOS", "FVG", "Retest", "Blue1", "Blue2", "Blue3", "ScoreA", "ScoreA+", "State")
     for c = 0 to 14
         table.cell(dash, c, 1, array.get(headers, c), bgcolor=color.new(color.silver, 20))
-    for r = 0 to 3
-        sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, r))
+        table.cell(dash, c, 2, "")
+if barstate.islast
+    table.cell_set_text(dash, 1, 0, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades))
+    table.cell_set_text(dash, 2, 0, "Blocked: " + blockedChart)
+    table.cell_set_text(dash, 3, 0, focusMode ? "Focus: " + str.tostring(focusY) + "-" + str.tostring(focusM) + "-" + str.tostring(focusD) + " 09:30" : "Focus: Live")
+    for r = 0 to 0
+        sym = chartTickerStd
         bias = array.get(arrBias, r)
         btxt = bias == 1 ? "FGD" : bias == -1 ? "FRD" : "NONE"
         st = array.get(arrState, r)
@@ -835,23 +802,23 @@ if barstate.islast
         b1t = not na(array.get(arrBlue1T, r)) ? "●" : "-"
         b2t = not na(array.get(arrBlue2T, r)) ? "●" : "-"
         b3t = not na(array.get(arrBlue3T, r)) ? "●" : "-"
-        table.cell(dash, 0, r + 2, sym)
-        table.cell(dash, 1, r + 2, btxt)
-        table.cell(dash, 2, r + 2, mrnTxt)
-        table.cell(dash, 3, r + 2, nyTxt)
-        table.cell(dash, 4, r + 2, st >= STATE_ASIA_READY ? "Y" : "N")
-        table.cell(dash, 5, r + 2, swTxt)
-        table.cell(dash, 6, r + 2, bosTxt)
-        table.cell(dash, 7, r + 2, fvgTxt)
-        table.cell(dash, 8, r + 2, retTxt)
-        table.cell(dash, 9, r + 2, b1t)
-        table.cell(dash, 10, r + 2, b2t)
-        table.cell(dash, 11, r + 2, b3t)
-        table.cell(dash, 12, r + 2, str.tostring(array.get(arrScoreA, r), "#.0"))
-        table.cell(dash, 13, r + 2, str.tostring(array.get(arrScoreAPlus, r), "#.0"))
+        table.cell_set_text(dash, 0, r + 2, sym)
+        table.cell_set_text(dash, 1, r + 2, btxt)
+        table.cell_set_text(dash, 2, r + 2, mrnTxt)
+        table.cell_set_text(dash, 3, r + 2, nyTxt)
+        table.cell_set_text(dash, 4, r + 2, st >= STATE_ASIA_READY ? "Y" : "N")
+        table.cell_set_text(dash, 5, r + 2, swTxt)
+        table.cell_set_text(dash, 6, r + 2, bosTxt)
+        table.cell_set_text(dash, 7, r + 2, fvgTxt)
+        table.cell_set_text(dash, 8, r + 2, retTxt)
+        table.cell_set_text(dash, 9, r + 2, b1t)
+        table.cell_set_text(dash, 10, r + 2, b2t)
+        table.cell_set_text(dash, 11, r + 2, b3t)
+        table.cell_set_text(dash, 12, r + 2, str.tostring(array.get(arrScoreA, r), "#.0"))
+        table.cell_set_text(dash, 13, r + 2, str.tostring(array.get(arrScoreAPlus, r), "#.0"))
         hiddenTxt = array.get(arrDisplayOk, r) ? "" : " Hidden <" + str.tostring(minScoreToDisplay)
         reasonTxt = array.get(arrGreatReason, r)
-        table.cell(dash, 14, r + 2, f_stateName(st) + hiddenTxt + (reasonTxt != "" ? " | " + reasonTxt : ""))
+        table.cell_set_text(dash, 14, r + 2, f_stateName(st) + hiddenTxt + (reasonTxt != "" ? " | " + reasonTxt : ""))
 
 // Training mode notes
 missNoBos = trainingMode and array.get(arrSweepCount, chartIdx) > array.get(arrBosCount, chartIdx)

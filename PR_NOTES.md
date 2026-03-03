@@ -2,6 +2,10 @@
 
 ## What changed (latest)
 
+- 2026-03-03 Follow-up compile fix (HUD bool snapshot NA check):
+  - Resolved Pine type error `Cannot call "na" with argument "series bool"` by removing `na()` checks on bool snapshot fields (`inNyHud`, `tradeDayHud`, BOS/FVG/Retest/Blue* booleans).
+  - Added `focusSnapshotTs = ta.valuewhen(condFocusDay, time, 0)` as snapshot existence probe and use `focusSnapshotOk` to drive `—` fallback for all bool HUD rows.
+
 - 2026-03-03 Focus HUD snapshot fix (focus_mode):
   - Kept day-key focus judgement: `focusDayKey = f_dayKey(focusAnchor, timezoneInput)`, `barDayKey = f_dayKey(time, timezoneInput)`, `condFocusDay = barDayKey == focusDayKey`.
   - HUD fields in `focus_mode=true` now use `ta.valuewhen(condFocusDay, <series>, 0)` to read focus-day snapshot rather than relying on last-bar date context.

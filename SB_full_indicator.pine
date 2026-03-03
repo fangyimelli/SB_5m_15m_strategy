@@ -780,16 +780,17 @@ if barstate.islast
         blue1Hud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BLUE1, 0) : array.get(arrState, chartIdx) >= STATE_BLUE1
         blue2Hud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BLUE2, 0) : array.get(arrState, chartIdx) >= STATE_BLUE2
         blue3Hud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BLUE3, 0) : array.get(arrState, chartIdx) >= STATE_BLUE3
-        focusSnapshotOk = not na(stHud)
-        gradeHud = na(scoreAPlusHud) ? "—" : (scoreAPlusHud >= scoreThresholdAPlus ? "A+" : "A")
-        bosText = na(bosHud) ? "—" : f_mark(bosHud)
-        fvgText = useFvg ? (na(fvgHud) ? "—" : f_mark(fvgHud)) : "—"
-        retestText = na(retestHud) ? "—" : f_mark(retestHud)
-        blue1Text = na(blue1Hud) ? "—" : f_mark(blue1Hud)
-        blue2Text = na(blue2Hud) ? "—" : f_mark(blue2Hud)
-        blue3Text = na(blue3Hud) ? "—" : f_mark(blue3Hud)
-        tradeDayText = na(tradeDayHud) ? "—" : f_mark(tradeDayHud)
-        nyText = na(inNyHud) ? "—" : f_mark(inNyHud)
+        focusSnapshotTs = focus_mode ? ta.valuewhen(condFocusDay, time, 0) : time
+        focusSnapshotOk = not na(focusSnapshotTs)
+        gradeHud = (focus_mode and not focusSnapshotOk) or na(scoreAPlusHud) ? "—" : (scoreAPlusHud >= scoreThresholdAPlus ? "A+" : "A")
+        bosText = focusSnapshotOk ? f_mark(bosHud) : "—"
+        fvgText = useFvg ? (focusSnapshotOk ? f_mark(fvgHud) : "—") : "—"
+        retestText = focusSnapshotOk ? f_mark(retestHud) : "—"
+        blue1Text = focusSnapshotOk ? f_mark(blue1Hud) : "—"
+        blue2Text = focusSnapshotOk ? f_mark(blue2Hud) : "—"
+        blue3Text = focusSnapshotOk ? f_mark(blue3Hud) : "—"
+        tradeDayText = focusSnapshotOk ? f_mark(tradeDayHud) : "—"
+        nyText = focusSnapshotOk ? f_mark(inNyHud) : "—"
         hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
         hudX = bar_index - hud_x_bars_offset
         hudTxt = "焦點日快照=" + focusDateText + " 09:30 NY\n" +

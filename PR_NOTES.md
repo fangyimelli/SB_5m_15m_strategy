@@ -2,6 +2,11 @@
 
 ## What changed (latest)
 
+- 2026-03-03 Focus-mode day/session gating fix:
+  - Replaced focus day check from timestamp window (`focusDayStart/focusDayEnd`) to day-key comparison: `focusDayKey = f_dayKey(focusAnchor, timezoneInput)`, `barDayKey = f_dayKey(time, timezoneInput)`, `isInFocusDay = barDayKey == focusDayKey`.
+  - Added `isInFocusNYSession = time >= focusNYStart and time < focusNYEnd` and switched focus filters for draw/Blue/alerts to NY-session scope in focus mode.
+  - HUD masking now continues to use `focus_mode && !isInFocusDay` (dayKey-based), so TradeDay/BOS/FVG/Blue/Score render correctly on selected focus day.
+  - Added HUD debug line: `barDayKey=... | focusDayKey=...` for quick verification.
 - 2026-03-03 HUD-only/label-capacity cleanup on current branch:
   - Removed dashboard `table` rendering and related table text refresh logic; HUD is now the only status surface.
   - Reserved label capacity for HUD in lifecycle cleanup (`reservedLabels=2`, `capForSignals=min(maxSignalLabels, max(1, maxLabelsCap-reservedLabels))`) so signal labels cannot starve HUD label creation.

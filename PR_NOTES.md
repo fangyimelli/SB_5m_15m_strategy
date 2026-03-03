@@ -1,6 +1,8 @@
 # PR Notes
 
 ## What changed (latest)
+- Removed helper request-pack functions and inlined request tuples to satisfy Pine consistency warnings.
+- Replaced rectangle touch counting implementation to avoid `ta.sum` reference errors.
 - Added Great FRD/FGD gate inputs and rectangle proxy checks (compression/flatness/touches).
 - Trade Day and blue-flow enablement now depend on Great-daytype when enabled.
 - Added score visibility filter (`min_score_to_display`) to hide low-quality chart outputs and alerts.

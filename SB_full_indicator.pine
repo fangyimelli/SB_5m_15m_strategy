@@ -100,9 +100,20 @@ trainingMode = input.bool(false, "Training mode")
 tradeDayOnly = input.bool(true, "Trade Day only (enable full flow only on Trade Day)")
 
 focusMode = input.bool(false, "Focus mode (lock to one NY date)")
-focusDateNy0930 = input.time(timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 9, 30), "Focus date NY 09:30")
+focusDateNy0930 = input.time(1735828200000, "Focus date NY 09:30")
 focusWindow = input.string("SessionOnly", "Focus window", options=["SessionOnly", "FullDay"])
 allowAlertsInFocus = input.bool(false, "Allow alerts in focus mode")
+
+requireGreatDaytype = input.bool(true, "Require Great FRD/FGD rectangle")
+rectTf = input.string("15", "Rectangle TF (fixed)", options=["15"])
+rectAtrLen = input.int(14, "Rectangle ATR len", minval=1)
+rectLookbackBars = input.int(12, "Rectangle lookback bars", minval=3, maxval=48)
+rectMaxAtrMult = input.float(1.0, "Rectangle max ATR mult", step=0.1)
+rectBodyRatioMax = input.float(0.45, "Rectangle body ratio max", step=0.01)
+touchAtrMult = input.float(0.10, "Rectangle touch ATR mult", step=0.01)
+minTouchesEachSide = input.int(2, "Min touches each side", minval=1, maxval=10)
+drawRectangleBox = input.bool(true, "Draw Day2 rectangle box")
+minScoreToDisplay = input.int(70, "Min score to display", minval=0, maxval=100)
 
 // =============================
 // Constants / enums
@@ -170,6 +181,30 @@ f_session_minutes(_sess) =>
     dur = endMin - startMin
     dur <= 0 ? dur + 24 * 60 : dur
 
+
+f_req5(_nySession, _asiaSession, _tz) =>
+    ema = ta.ema(close, 20)
+    [not na(time("5", _nySession, _tz)), not na(time("5", _nySession, _tz))[1], not na(time("5", _asiaSession, _tz)), high, low, open, close, ema]
+
+f_req15(_sweepAtrLen, _bosL, _bosR, _rectLookback, _rectMaxAtrMult, _rectBodyRatioMax, _touchAtrMult, _minTouches, _tz) =>
+    atr = ta.atr(_sweepAtrLen)
+    ph = ta.pivothigh(high, _bosL, _bosR)
+    pl = ta.pivotlow(low, _bosL, _bosR)
+    hh = ta.highest(high, _rectLookback)
+    ll = ta.lowest(low, _rectLookback)
+    rng = hh - ll
+    bodyRatio = ta.sma(math.abs(close - open) / math.max(high - low, syminfo.mintick), _rectLookback)
+    touchBuf = atr * _touchAtrMult
+    topTouches = ta.sum(high >= hh - touchBuf ? 1.0 : 0.0, _rectLookback)
+    botTouches = ta.sum(low <= ll + touchBuf ? 1.0 : 0.0, _rectLookback)
+    rectOk = (rng <= atr * _rectMaxAtrMult) and (bodyRatio <= _rectBodyRatioMax) and (topTouches >= _minTouches and botTouches >= _minTouches)
+    dKey15 = year(time, _tz) * 10000 + month(time, _tz) * 100 + dayofmonth(time, _tz)
+    [high, low, close, atr, ph, pl, low > high[2], high < low[2], low, high[2], low[2], high, hh, ll, rectOk, dKey15]
+
+f_reqD(_dayAtrLen) =>
+    atr = ta.atr(_dayAtrLen)
+    [open, close, open[1], close[1], high[1] - low[1], high[2] - low[2], atr[1], atr[2], close[2] < open[2], close[2] > open[2], time]
+
 // =============================
 // Per-symbol state arrays (0..3)
 // =============================
@@ -229,6 +264,13 @@ var arrScannerFgdPulse = array.new_bool(4, false)
 var arrScannerFrdPulse = array.new_bool(4, false)
 var arrScannerTradePulse = array.new_bool(4, false)
 var arrLastDBarTime = array.new_int(4, na)
+var arrRectToday = array.new_bool(4, false)
+var arrRectPrev = array.new_bool(4, false)
+var arrRectDayKey = array.new_int(4, na)
+var arrRectHH = array.new_float(4, na)
+var arrRectLL = array.new_float(4, na)
+var arrGreatReason = array.new_string(4, "")
+var arrDisplayOk = array.new_bool(4, true)
 
 // Training counters
 var arrSweepCount = array.new_int(4, 0)
@@ -277,14 +319,27 @@ inFocusDisplayWindow = focusMode ? (time >= (focusWindow == "FullDay" ? focusDay
 for i = 0 to 3
     sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, i))
 
-    [inNy5, inNy5Prev, inAsia5, h5, l5, o5, c5, ema5] = request.security(sym, "5", [not na(time("5", nySession, timezoneInput)), not na(time("5", nySession, timezoneInput))[1], not na(time("5", asiaSession, timezoneInput)), high, low, open, close, ta.ema(close, 20)])
+    [inNy5, inNy5Prev, inAsia5, h5, l5, o5, c5, ema5] = request.security(sym, "5", f_req5(nySession, asiaSession, timezoneInput))
     nyStart5 = inNy5 and not inNy5Prev
 
-    [h15, l15, c15, atr15, ph15, pl15, bullFvg, bearFvg, bullFvgUpper, bullFvgLower, bearFvgUpper, bearFvgLower] = request.security(sym, "15", [high, low, close, ta.atr(sweepAtrLen), ta.pivothigh(high, bosSwingLeft, bosSwingRight), ta.pivotlow(low, bosSwingLeft, bosSwingRight), low > high[2], high < low[2], low, high[2], low[2], high])
+    [h15, l15, c15, atr15, ph15, pl15, bullFvg, bearFvg, bullFvgUpper, bullFvgLower, bearFvgUpper, bearFvgLower, rectHH, rectLL, rectOk15, dKey15] = request.security(sym, "15", f_req15(sweepAtrLen, bosSwingLeft, bosSwingRight, rectLookbackBars, rectMaxAtrMult, rectBodyRatioMax, touchAtrMult, minTouchesEachSide, timezoneInput))
     if not na(ph15)
         array.set(arrSwingHigh, i, ph15)
     if not na(pl15)
         array.set(arrSwingLow, i, pl15)
+
+    prevRectDay = array.get(arrRectDayKey, i)
+    if na(prevRectDay)
+        array.set(arrRectDayKey, i, dKey15)
+        array.set(arrRectToday, i, rectOk15)
+    else if dKey15 != prevRectDay
+        array.set(arrRectPrev, i, array.get(arrRectToday, i))
+        array.set(arrRectToday, i, rectOk15)
+        array.set(arrRectDayKey, i, dKey15)
+    else
+        array.set(arrRectToday, i, rectOk15)
+    array.set(arrRectHH, i, rectHH)
+    array.set(arrRectLL, i, rectLL)
 
     currentDay = f_dayKey(time, timezoneInput)
     lastDay = array.get(arrLastDay, i)
@@ -337,10 +392,24 @@ for i = 0 to 3
         state := STATE_ASIA_READY
 
     // Gates
-    [dOpen, dClose, yOpen, yClose, yRange, yAtr, dTime, dFgd, dFrd, dTradeDay] = request.security(sym, "D", [open, close, open[1], close[1], high[1] - low[1], ta.atr(dayMoveAtrLen)[1], time, (close[1] < open[1] and (high[1]-low[1]) >= ta.atr(dayMoveAtrLen)[1] * dumpPumpMinAtrMult and close > open), (close[1] > open[1] and (high[1]-low[1]) >= ta.atr(dayMoveAtrLen)[1] * dumpPumpMinAtrMult and close < open), ((close[2] < open[2] and (high[2]-low[2]) >= ta.atr(dayMoveAtrLen)[2] * dumpPumpMinAtrMult and close[1] > open[1]) or (close[2] > open[2] and (high[2]-low[2]) >= ta.atr(dayMoveAtrLen)[2] * dumpPumpMinAtrMult and close[1] < open[1]))])
+    [dOpen, dClose, yOpen, yClose, yRange, y2Range, yAtr, y2Atr, d2Bear, d2Bull, dTime] = request.security(sym, "D", f_reqD(dayMoveAtrLen))
     dumpYesterday = yClose < yOpen and yRange >= yAtr * dumpPumpMinAtrMult
     pumpYesterday = yClose > yOpen and yRange >= yAtr * dumpPumpMinAtrMult
     bias = dumpYesterday and dClose > dOpen ? 1 : pumpYesterday and dClose < dOpen ? -1 : 0
+    rectToday = array.get(arrRectToday, i)
+    rectPrev = array.get(arrRectPrev, i)
+    dFgdBase = dumpYesterday and dClose > dOpen
+    dFrdBase = pumpYesterday and dClose < dOpen
+    dFgd = dFgdBase and (not requireGreatDaytype or rectToday)
+    dFrd = dFrdBase and (not requireGreatDaytype or rectToday)
+    dump2 = d2Bear and y2Range >= y2Atr * dumpPumpMinAtrMult
+    pump2 = d2Bull and y2Range >= y2Atr * dumpPumpMinAtrMult
+    prevFgdBase = dump2 and yClose > yOpen
+    prevFrdBase = pump2 and yClose < yOpen
+    prevGreat = (prevFgdBase or prevFrdBase) and (not requireGreatDaytype or rectPrev)
+    dTradeDay = prevGreat
+    greatReason = requireGreatDaytype and not rectToday ? "Day2 not great rectangle" : ""
+    array.set(arrGreatReason, i, greatReason)
     array.set(arrBias, i, bias)
     array.set(arrIsFgd, i, dFgd)
     array.set(arrIsFrd, i, dFrd)
@@ -362,6 +431,8 @@ for i = 0 to 3
         blockedReason := "MRN blocked"
     else if requireSbDayType and bias == 0
         blockedReason := "SB bias NONE"
+    else if requireGreatDaytype and array.get(arrGreatReason, i) != ""
+        blockedReason := array.get(arrGreatReason, i)
     else if not inNyGate
         blockedReason := "Out of NY session"
     else if not slotAvailable
@@ -522,6 +593,8 @@ for i = 0 to 3
     scoreAplus = scoreEnabled and flowEnabled ? f_score(inNy5, hasSweep, hasBos, useFvg ? hasFvgMit : false, state >= STATE_BLUE3) : 0
     array.set(arrScoreA, i, scoreA)
     array.set(arrScoreAPlus, i, scoreAplus)
+    displayOk = math.max(scoreA, scoreAplus) >= minScoreToDisplay
+    array.set(arrDisplayOk, i, displayOk)
 
 // Tie-breaker & slot consume when Blue3
 if mode == "Portfolio(4 symbols)"
@@ -565,7 +638,7 @@ chartDir = array.get(arrBosDir, chartIdx)
 chartBos = array.get(arrBosLevel, chartIdx)
 chartSym = mode == "Chart(single)" ? chartTickerStd : array.get(arrSyms, chartIdx)
 chartScore = isAPlus ? array.get(arrScoreAPlus, chartIdx) : array.get(arrScoreA, chartIdx)
-shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and inFocusDisplayWindow
+shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and inFocusDisplayWindow and array.get(arrDisplayOk, chartIdx)
 b1NowChart = shouldDraw and b1NowChartRaw
 b2NowChart = shouldDraw and b2NowChartRaw
 b3NowChart = shouldDraw and b3NowChartRaw
@@ -575,6 +648,7 @@ var line tpLine = na
 var line slLine = na
 var line bosLine = na
 var box fvgBox = na
+var box rectBox = na
 var label tpLbl = na
 var label slLbl = na
 var label blockedLbl = na
@@ -586,9 +660,9 @@ var bool firedB1Bar = false
 var bool firedB2Bar = false
 var bool firedB3Bar = false
 
-b1AlertCond = b1NowChart and (not focusMode or allowAlertsInFocus)
-b2AlertCond = b2NowChart and (not focusMode or allowAlertsInFocus)
-b3AlertCond = b3NowChart and (not focusMode or allowAlertsInFocus)
+b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
+b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
+b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
 alertcondition(b1AlertCond, "BLUE1 Retest Hit", "BLUE1 Retest Hit")
 alertcondition(b2AlertCond, "BLUE2 Reaction Confirmed", "BLUE2 Reaction Confirmed")
 alertcondition(b3AlertCond, "BLUE3 Manual Entry NOW", "BLUE3 ENTRY NOW")
@@ -682,6 +756,18 @@ if lineLifecycle == "Day End" and dayChanged
 
 // Chart marks
 
+
+if shouldDraw and drawRectangleBox
+    rectTop = array.get(arrRectHH, chartIdx)
+    rectBot = array.get(arrRectLL, chartIdx)
+    isFgdToday = array.get(arrIsFgd, chartIdx)
+    isFrdToday = array.get(arrIsFrd, chartIdx)
+    if (isFgdToday or isFrdToday) and not na(rectTop) and not na(rectBot)
+        if not na(rectBox)
+            box.delete(rectBox)
+        rectColor = isFgdToday ? color.new(color.green, 70) : color.new(color.red, 70)
+        rectBox := box.new(left=bar_index - rectLookbackBars, right=bar_index, top=math.max(rectTop, rectBot), bottom=math.min(rectTop, rectBot), bgcolor=rectColor, border_color=color.new(rectColor, 0))
+
 chartBosTime = array.get(arrBosTime, chartIdx)
 if shouldDraw and not na(chartBosTime) and chartBosTime != lastDrawnBosTime
     lastDrawnBosTime := chartBosTime
@@ -708,8 +794,8 @@ plot(array.get(arrBosLevel, chartIdx), "BOS Level", color=color.new(color.yellow
 scannerFgdNow = array.get(arrScannerFgdPulse, chartIdx)
 scannerFrdNow = array.get(arrScannerFrdPulse, chartIdx)
 scannerTradeNow = array.get(arrScannerTradePulse, chartIdx)
-plotshape(scannerFgdNow, title="FGD Scanner", text="FGD", style=shape.labelup, location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.white, size=size.tiny)
-plotshape(scannerFrdNow, title="FRD Scanner", text="FRD", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 0), textcolor=color.white, size=size.tiny)
+plotshape(scannerFgdNow, title="FGD Scanner", text="FGD*", style=shape.labelup, location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.white, size=size.tiny)
+plotshape(scannerFrdNow, title="FRD Scanner", text="FRD*", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 0), textcolor=color.white, size=size.tiny)
 plotshape(scannerTradeNow, title="TRADE DAY", text="TRADE DAY", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
 
 blockedChart = array.get(arrBlocked, chartIdx)
@@ -731,7 +817,7 @@ if barstate.islast
     table.cell(dash, 0, 0, "SB Dashboard", bgcolor=color.new(color.black, 0), text_color=color.white)
     table.cell(dash, 1, 0, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades), bgcolor=color.new(color.black, 0), text_color=color.white)
     table.cell(dash, 2, 0, "Used Symbols: " + todaySym1 + " " + todaySym2, bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 3, 0, focusMode ? "Focus: " + str.format("{0,date,yyyy-MM-dd HH:mm}", focusAnchor) : "Focus: Live", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 3, 0, focusMode ? "Focus: " + str.tostring(focusY) + "-" + str.tostring(focusM) + "-" + str.tostring(focusD) + " 09:30" : "Focus: Live", bgcolor=color.new(color.black, 0), text_color=color.white)
     headers = array.from("Symbol", "Bias【SB必要】", "MRN", "NY", "Asia", "Sweep", "BOS", "FVG", "Retest", "Blue1", "Blue2", "Blue3", "ScoreA", "ScoreA+", "State")
     for c = 0 to 14
         table.cell(dash, c, 1, array.get(headers, c), bgcolor=color.new(color.silver, 20))
@@ -763,7 +849,9 @@ if barstate.islast
         table.cell(dash, 11, r + 2, b3t)
         table.cell(dash, 12, r + 2, str.tostring(array.get(arrScoreA, r), "#.0"))
         table.cell(dash, 13, r + 2, str.tostring(array.get(arrScoreAPlus, r), "#.0"))
-        table.cell(dash, 14, r + 2, f_stateName(st))
+        hiddenTxt = array.get(arrDisplayOk, r) ? "" : " Hidden <" + str.tostring(minScoreToDisplay)
+        reasonTxt = array.get(arrGreatReason, r)
+        table.cell(dash, 14, r + 2, f_stateName(st) + hiddenTxt + (reasonTxt != "" ? " | " + reasonTxt : ""))
 
 // Training mode notes
 missNoBos = trainingMode and array.get(arrSweepCount, chartIdx) > array.get(arrBosCount, chartIdx)

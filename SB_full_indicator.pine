@@ -287,12 +287,10 @@ focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
 focusDayKey = f_dayKey(focusAnchor, timezoneInput)
 barDayKey = f_dayKey(time, timezoneInput)
 condFocusDay = barDayKey == focusDayKey
-t5 = request.security(syminfo.tickerid, "5", time)
-inNy5Focus = request.security(syminfo.tickerid, "5", not na(time("5", nySession, timezoneInput)))
+[t5, inNy5Focus] = request.security(syminfo.tickerid, "5", [time, not na(time("5", nySession, timezoneInput))])
 barDayKey5 = f_dayKey(t5, timezoneInput)
 condFocusDay5 = barDayKey5 == focusDayKey
 condFocusNY5 = condFocusDay5 and inNy5Focus
-lastNYBarTimeUsed = ta.valuewhen(condFocusNY5, t5, 0)
 sessMinutes = f_session_minutes(nySession)
 focusNYStart = focusAnchor
 focusNYEnd = focusNYStart + sessMinutes * 60000
@@ -777,34 +775,36 @@ blockedChart = array.get(arrBlocked, chartIdx)
 if barstate.islast
     if show_hud
         stSnap = ta.valuewhen(condFocusNY5, array.get(arrState, chartIdx), 0)
-        tradeDaySnap = ta.valuewhen(condFocusDay5, array.get(arrIsTradeDay, chartIdx), 0)
         scoreASnap = ta.valuewhen(condFocusNY5, array.get(arrScoreA, chartIdx), 0)
         scoreAPlusSnap = ta.valuewhen(condFocusNY5, array.get(arrScoreAPlus, chartIdx), 0)
         fvgMitSnap = ta.valuewhen(condFocusNY5, array.get(arrFvgMit, chartIdx), 0)
         bosDirSnap = ta.valuewhen(condFocusNY5, array.get(arrBosDir, chartIdx), 0)
+        inNySnap = ta.valuewhen(condFocusNY5, array.get(arrInNy, chartIdx), 0)
+        tradeDaySnap = ta.valuewhen(condFocusDay5, array.get(arrIsTradeDay, chartIdx), 0)
+        lastNYBarTimeUsed = ta.valuewhen(condFocusNY5, t5, 0)
 
         stHud = focus_mode ? stSnap : array.get(arrState, chartIdx)
         tradeDayHud = focus_mode ? tradeDaySnap : array.get(arrIsTradeDay, chartIdx)
         scoreAHud = focus_mode ? scoreASnap : array.get(arrScoreA, chartIdx)
         scoreAPlusHud = focus_mode ? scoreAPlusSnap : array.get(arrScoreAPlus, chartIdx)
         fvgMitHud = focus_mode ? fvgMitSnap : array.get(arrFvgMit, chartIdx)
-        inNyHud = focus_mode ? ta.valuewhen(condFocusNY5, array.get(arrInNy, chartIdx), 0) : array.get(arrInNy, chartIdx)
+        inNyHud = focus_mode ? inNySnap : array.get(arrInNy, chartIdx)
 
-        foundSnap = focus_mode ? not na(stSnap) : true
+        foundSnap = not na(stSnap)
+        hasSnap = focus_mode ? foundSnap : true
         gradeHud = (focus_mode and not foundSnap) or na(scoreAPlusHud) ? "—" : (scoreAPlusHud >= scoreThresholdAPlus ? "A+" : "A")
-        bosText = foundSnap ? f_mark(stHud >= STATE_BOS_CONFIRMED) : "—"
-        fvgText = useFvg ? (foundSnap ? f_mark(fvgMitHud) : "—") : "—"
-        retestText = foundSnap ? f_mark(stHud >= STATE_BLUE1) : "—"
-        blue1Text = foundSnap ? f_mark(stHud >= STATE_BLUE1) : "—"
-        blue2Text = foundSnap ? f_mark(stHud >= STATE_BLUE2) : "—"
-        blue3Text = foundSnap ? f_mark(stHud >= STATE_BLUE3) : "—"
-        tradeDayText = foundSnap ? f_mark(tradeDayHud) : "—"
-        nyText = foundSnap ? f_mark(inNyHud) : "—"
-        lastNyText = na(lastNYBarTimeUsed) ? "—" : str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)
+        bosText = hasSnap ? f_mark(stHud >= STATE_BOS_CONFIRMED) : "—"
+        fvgText = useFvg ? (hasSnap ? f_mark(fvgMitHud) : "—") : "—"
+        retestText = hasSnap ? f_mark(stHud >= STATE_BLUE1) : "—"
+        blue1Text = hasSnap ? f_mark(stHud >= STATE_BLUE1) : "—"
+        blue2Text = hasSnap ? f_mark(stHud >= STATE_BLUE2) : "—"
+        blue3Text = hasSnap ? f_mark(stHud >= STATE_BLUE3) : "—"
+        tradeDayText = hasSnap ? f_mark(tradeDayHud) : "—"
+        nyText = hasSnap ? f_mark(inNyHud) : "—"
         hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
         hudX = bar_index - hud_x_bars_offset
         hudTxt = "焦點日快照=" + focusDateText + " 09:30 NY\n" +
-          (hud_show_focus_debug ? ("focusDayKey=" + str.tostring(focusDayKey) + " | foundSnap=" + (foundSnap ? "Y" : "N") + " | lastNYBar=" + lastNyText + "\n") : "") +
+          (hud_show_focus_debug ? ("focusDayKey=" + str.tostring(focusDayKey) + " | foundSnap=" + (foundSnap ? "Y" : "N") + (na(lastNYBarTimeUsed) ? "" : " | lastNYBarTimeUsed=" + str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n") : "") +
           "TradeDay=" + tradeDayText + "\n" +
           "Grade=" + gradeHud + "\n" +
           "NY=" + nyText + "\n" +

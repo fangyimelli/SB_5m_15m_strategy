@@ -2,6 +2,12 @@
 
 ## What changed (latest)
 
+- 2026-03-03 Focus HUD snapshot source fix (selected-day HUD, no last-bar mask):
+  - Focus day key remains `focusDayKey = f_dayKey(focusAnchor, timezoneInput)` and `condFocusDay = barDayKey == focusDayKey`.
+  - Added explicit snapshot series in HUD block: `stSnap`, `tradeDaySnap`, `scoreASnap`, `scoreAPlusSnap`, `fvgMitSnap`, `bosDirSnap` via `ta.valuewhen(condFocusDay, ..., 0)`.
+  - HUD rendering now switches by mode (`stHud/tradeDayHud/scoreAHud/scoreAPlusHud/fvgMitHud`) and derives BOS/Retest/Blue1/2/3 from `stHud >= STATE_XX`.
+  - Removed focus masking fallback in HUD (`focus_mode && !isInFocusDay` => forced `—/⛔`); now only `hasSnap = not na(stSnap)` drives `—` when selected date is absent in loaded history.
+  - HUD date line keeps selected `focusDateText`; debug line is now `focusDayKey=... | foundSnap=Y/N` controlled by `hud_show_focus_debug` input.
 - 2026-03-03 Follow-up compile fix (HUD bool snapshot NA check):
   - Resolved Pine type error `Cannot call "na" with argument "series bool"` by removing `na()` checks on bool snapshot fields (`inNyHud`, `tradeDayHud`, BOS/FVG/Retest/Blue* booleans).
   - Added `focusSnapshotTs = ta.valuewhen(condFocusDay, time, 0)` as snapshot existence probe and use `focusSnapshotOk` to drive `—` fallback for all bool HUD rows.

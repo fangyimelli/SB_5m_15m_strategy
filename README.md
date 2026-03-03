@@ -3,6 +3,7 @@
 TradingView Pine Script indicator implementing SB workflow with portfolio/chart modes, focus mode, and staged Blue signals.
 
 ## Removed / Deprecated Log
+- 2026-03-03: Fix: focus HUD uses `ta.valuewhen(condFocusDay, ..., 0)` snapshot fields (state/TradeDay/NY/BOS/FVG/Retest/Blue1/2/3/ScoreA/ScoreA+) instead of last-bar masking; show `—` only when selected focus day snapshot is unavailable (`na`).
 - 2026-03-03: Fix: focus day detection uses `dayKey` comparison (`barDayKey == focusDayKey`) to avoid exchange/UTC day-shift; NY session filter split to `isInFocusNYSession` for focus-mode draw/alert gating.
 - 2026-03-03: Removed dashboard table; HUD-only status panel; reserved label capacity for HUD; removed FRD*/FGD* star labels.
 - 2026-03-03: Focus anchor date extraction now uses timezone-aware `year/month/dayofmonth(..., "America/New_York")`; HUD focus date uses Y-M-D string composition (no exchange-timezone `tostring(time)` drift), and focus mode now gates display/output only while state-machine/Asia/Sweep/BOS/FVG/Blue calculations run on all historical bars.

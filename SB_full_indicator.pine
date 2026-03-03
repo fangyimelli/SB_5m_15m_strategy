@@ -285,10 +285,11 @@ focusD = dayofmonth(focusSourceTs, timezoneInput)
 focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
 focusDayKey = f_dayKey(focusAnchor, timezoneInput)
 barDayKey = f_dayKey(time, timezoneInput)
+condFocusDay = barDayKey == focusDayKey
 sessMinutes = f_session_minutes(nySession)
 focusNYStart = focusAnchor
 focusNYEnd = focusNYStart + sessMinutes * 60000
-isInFocusDay = barDayKey == focusDayKey
+isInFocusDay = condFocusDay
 isInFocusNYSession = time >= focusNYStart and time < focusNYEnd
 focusDateText = str.tostring(focusY) + "-" + str.tostring(focusM, "00") + "-" + str.tostring(focusD, "00")
 
@@ -768,25 +769,32 @@ blockedChart = array.get(arrBlocked, chartIdx)
 // =============================
 if barstate.islast
     if show_hud
-        stHud = array.get(arrState, chartIdx)
-        scoreAHud = array.get(arrScoreA, chartIdx)
-        scoreAPlusHud = array.get(arrScoreAPlus, chartIdx)
-        tradeDayHud = array.get(arrIsTradeDay, chartIdx)
-        inNyHud = array.get(arrInNy, chartIdx)
-        focusMasked = focus_mode and not isInFocusDay
-        gradeHud = scoreAPlusHud >= scoreThresholdAPlus ? "A+" : "A"
-        bosText = focusMasked ? "—" : f_mark(stHud >= STATE_BOS_CONFIRMED)
-        fvgText = focusMasked ? "—" : (useFvg ? f_mark(array.get(arrFvgMit, chartIdx)) : "—")
-        retestText = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE1)
-        blue1Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE1)
-        blue2Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE2)
-        blue3Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE3)
-        tradeDayText = focusMasked ? "—" : f_mark(tradeDayHud)
-        nyText = focusMasked ? "—" : f_mark(inNyHud)
+        stHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx), 0) : array.get(arrState, chartIdx)
+        scoreAHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrScoreA, chartIdx), 0) : array.get(arrScoreA, chartIdx)
+        scoreAPlusHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrScoreAPlus, chartIdx), 0) : array.get(arrScoreAPlus, chartIdx)
+        tradeDayHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrIsTradeDay, chartIdx), 0) : array.get(arrIsTradeDay, chartIdx)
+        inNyHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrInNy, chartIdx), 0) : array.get(arrInNy, chartIdx)
+        bosHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BOS_CONFIRMED, 0) : array.get(arrState, chartIdx) >= STATE_BOS_CONFIRMED
+        fvgHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrFvgMit, chartIdx), 0) : array.get(arrFvgMit, chartIdx)
+        retestHud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BLUE1, 0) : array.get(arrState, chartIdx) >= STATE_BLUE1
+        blue1Hud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BLUE1, 0) : array.get(arrState, chartIdx) >= STATE_BLUE1
+        blue2Hud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BLUE2, 0) : array.get(arrState, chartIdx) >= STATE_BLUE2
+        blue3Hud = focus_mode ? ta.valuewhen(condFocusDay, array.get(arrState, chartIdx) >= STATE_BLUE3, 0) : array.get(arrState, chartIdx) >= STATE_BLUE3
+        focusSnapshotOk = not na(stHud)
+        gradeHud = na(scoreAPlusHud) ? "—" : (scoreAPlusHud >= scoreThresholdAPlus ? "A+" : "A")
+        bosText = na(bosHud) ? "—" : f_mark(bosHud)
+        fvgText = useFvg ? (na(fvgHud) ? "—" : f_mark(fvgHud)) : "—"
+        retestText = na(retestHud) ? "—" : f_mark(retestHud)
+        blue1Text = na(blue1Hud) ? "—" : f_mark(blue1Hud)
+        blue2Text = na(blue2Hud) ? "—" : f_mark(blue2Hud)
+        blue3Text = na(blue3Hud) ? "—" : f_mark(blue3Hud)
+        tradeDayText = na(tradeDayHud) ? "—" : f_mark(tradeDayHud)
+        nyText = na(inNyHud) ? "—" : f_mark(inNyHud)
         hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
         hudX = bar_index - hud_x_bars_offset
-        hudTxt = "日期=" + focusDateText + " 09:30 NY\n" +
+        hudTxt = "焦點日快照=" + focusDateText + " 09:30 NY\n" +
           "barDayKey=" + str.tostring(barDayKey) + " | focusDayKey=" + str.tostring(focusDayKey) + "\n" +
+          "focusSnapshot=" + (focusSnapshotOk ? "OK" : "NA") + "\n" +
           "TradeDay=" + tradeDayText + "\n" +
           "Grade=" + gradeHud + "\n" +
           "NY=" + nyText + "\n" +
@@ -796,8 +804,8 @@ if barstate.islast
           "Blue1=" + blue1Text + "\n" +
           "Blue2=" + blue2Text + "\n" +
           "Blue3=" + blue3Text + "\n" +
-          "ScoreA=" + (focusMasked ? "—" : str.tostring(scoreAHud, "#.0")) + "\n" +
-          "ScoreA+=" + (focusMasked ? "—" : str.tostring(scoreAPlusHud, "#.0")) + "\n" +
+          "ScoreA=" + (na(scoreAHud) ? "—" : str.tostring(scoreAHud, "#.0")) + "\n" +
+          "ScoreA+=" + (na(scoreAPlusHud) ? "—" : str.tostring(scoreAPlusHud, "#.0")) + "\n" +
           "入場規則=Blue3✅才手動進場"
         if na(hudLbl)
             hudLbl := label.new(hudX, hudY, hudTxt, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, textalign=f_hudTextAlign(hud_align), color=color.new(color.black, hud_bg_opacity), textcolor=color.white, size=f_hudSize(hud_text_size))

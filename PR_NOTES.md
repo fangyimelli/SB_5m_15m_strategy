@@ -1,24 +1,32 @@
 # PR Notes
 
 ## What changed (latest)
-- Removed Great FRD/FGD rectangle-gate inputs and all rectangle/great-state calculations from the indicator flow.
-- Restored baseline daytype logic on daily bars:
-  - FGD = yesterday DumpDay AND today close > open.
-  - FRD = yesterday PumpDay AND today close < open.
-  - Trade Day = yesterday was FRD or FGD (next-day trigger).
-- Daytype markers (FRD/FGD/TRADE DAY) now use daily pulse `plotshape` only and are no longer hidden by `min_score_to_display`, NY-session gating, or focus mode by default.
-- Added `focus_hide_daytype` (default `false`) so focus mode can optionally hide daytype markers without affecting trading logic.
-- Kept `require_sb_daytype` bias gate for direction filtering while removing Great-only dependencies.
-- Preserved memory hardening:
-  - No BLOCKED labels on chart (dashboard-only).
-  - Signal labels remain Blue1/Blue2/Blue3 only, with bounded queue (`max_signal_labels=30`) and oldest-first deletion.
-  - BOS/FVG/Entry/TP/SL drawing objects are deleted before redraw.
-  - Training miss diagnostics remain `plotshape` (no extra labels).
-  - Tightened indicator box cap (`max_boxes_count=10`).
+- Added **backtestable Focus Trade Day** flow on current branch (no new branch):
+  - Day2 remains FRD/FGD.
+  - Day3 is Trade Day (`tradeDayToday = FRD_yesterday OR FGD_yesterday`).
+  - FRD/FGD and TRADE DAY remain `plotshape` markers (no `label.new` daytype objects).
+- Refined focus mode to NY 09:30 anchor inputs:
+  - `focus_mode` (default `false`)
+  - `focus_trade_day_ny0930` (`input.time`, `0` means auto-use today NY 09:30)
+  - `focusAnchor = timestamp(timezone, Y,M,D,09,30)`
+  - `focusNYStart = focusAnchor`, `focusNYEnd = focusAnchor + NY session length`
+  - Focus Asia source is previous-night session (`20:00-00:00 NY`) for that Trade Day.
+- Focus display behavior:
+  - `focus_mode=true`: dashboard and chart draws are restricted to the focused NY session window; key lines/boxes/blue labels outside window are hidden/cleaned.
+  - `focus_mode=false`: normal realtime behavior unchanged.
+  - Alerts stay off by default in focus (`allow_alerts_in_focus=false`).
+- Dashboard updated to progress style with a focus headline:
+  - `FOCUS: YYYY-MM-DD 09:30 NY | TradeDay=Y/N | Grade=A/A+ | Hidden<70=Y/N`
+  - Progress columns: `Asia/Sweep/BOS/FVG/Retest/Blue3`.
+- Docs/template housekeeping:
+  - Added short Removed/Deprecated log entry in `README.md`.
+  - Updated this `PR_NOTES.md`.
+  - Confirmed `.github/pull_request_template.md` includes `Removed / Deprecated`, `Docs Updated`, and `驗收 (Acceptance)` sections.
 
 ## Validation checklist
-- [x] Great FRD/FGD inputs and rectangle gate logic removed.
-- [x] FRD/FGD/Trade Day daily pulse markers restored and always visible by default.
-- [x] `min_score_to_display` applied only to trading-related draw/alerts path.
-- [x] Focus mode no longer hides daytype markers by default (`focus_hide_daytype=false`).
-- [x] README Removed/Deprecated log updated.
+- [x] Trade Day logic follows Day3 = yesterday FRD/FGD.
+- [x] Daytype markers are `plotshape` only.
+- [x] Focus anchor/session and Asia attribution aligned to NY 09:30 + previous-night Asia session.
+- [x] Focus mode defaults to no alerts.
+- [x] Dashboard headline + progress format implemented.
+- [x] README/PR notes/template requirements satisfied.

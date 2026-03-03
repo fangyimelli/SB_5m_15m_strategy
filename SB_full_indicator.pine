@@ -96,10 +96,9 @@ tieBreaker = input.string("order_1_2_3_4", "Tie breaker (deprecated)", options=[
 trainingMode = input.bool(false, "Training mode")
 tradeDayOnly = input.bool(true, "Trade Day only (enable full flow only on Trade Day)")
 
-focusMode = input.bool(false, "Focus mode (lock to one NY date)")
-focusDateNy0930 = input.time(1735828200000, "Focus date NY 09:30")
-focusWindow = input.string("SessionOnly", "Focus window", options=["SessionOnly", "FullDay"])
-allowAlertsInFocus = input.bool(false, "Allow alerts in focus mode")
+focus_mode = input.bool(false, "Focus mode (NY 09:30 anchor)")
+focus_trade_day_ny0930 = input.time(0, "Focus trade day NY 09:30 (0 = today)")
+allow_alerts_in_focus = input.bool(false, "Allow alerts in focus mode")
 debugMode = input.bool(false, "Debug mode (dashboard-only daytype diagnostics)")
 
 minScoreToDisplay = input.int(70, "Min score to display", minval=0, maxval=100)
@@ -261,9 +260,10 @@ if na(portfolioDayKey) or dayNow != portfolioDayKey
 activeGrade = liveGradeMode == "Manual" ? manualGrade : (autoDowngrade ? "A" : manualGrade)
 isAPlus = activeGrade == "A+"
 
-focusY = year(focusDateNy0930, timezoneInput)
-focusM = month(focusDateNy0930, timezoneInput)
-focusD = dayofmonth(focusDateNy0930, timezoneInput)
+focusSourceTs = focus_trade_day_ny0930 == 0 ? timenow : focus_trade_day_ny0930
+focusY = year(focusSourceTs, timezoneInput)
+focusM = month(focusSourceTs, timezoneInput)
+focusD = dayofmonth(focusSourceTs, timezoneInput)
 focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
 focusDayStart = timestamp(timezoneInput, focusY, focusM, focusD, 0, 0)
 focusDayEnd = focusDayStart + 24 * 60 * 60000
@@ -272,8 +272,8 @@ focusNYStart = focusAnchor
 focusNYEnd = focusNYStart + sessMinutes * 60000
 focusAsiaStart = focusDayStart - 4 * 60 * 60000
 focusAsiaEnd = focusDayStart
-inFocusCalcWindow = focusMode ? (time >= focusAsiaStart and time <= (focusWindow == "FullDay" ? focusDayEnd : focusNYEnd)) : true
-inFocusDisplayWindow = focusMode ? (time >= (focusWindow == "FullDay" ? focusDayStart : focusNYStart) and time <= (focusWindow == "FullDay" ? focusDayEnd : focusNYEnd)) : true
+inFocusCalcWindow = focus_mode ? (time >= focusAsiaStart and time <= focusNYEnd) : true
+inFocusDisplayWindow = focus_mode ? (time >= focusNYStart and time <= focusNYEnd) : true
 
 // =============================
 // Core per-symbol engine
@@ -305,7 +305,7 @@ for i = 0 to 0
 
     currentDay = f_dayKey(time, timezoneInput)
     lastDay = array.get(arrLastDay, i)
-    if (not focusMode) and (na(lastDay) or currentDay != lastDay)
+    if (not focus_mode) and (na(lastDay) or currentDay != lastDay)
         array.set(arrLastDay, i, currentDay)
         array.set(arrState, i, STATE_IDLE)
         array.set(arrAsiaH, i, na)
@@ -359,11 +359,10 @@ for i = 0 to 0
     pumpYesterday = yClose > yOpen and yRange >= yAtr * dumpPumpMinAtrMult
     dFgd = dumpYesterday and dClose > dOpen
     dFrd = pumpYesterday and dClose < dOpen
-    dump2 = y2Close < y2Open and y2Range >= y2Atr * dumpPumpMinAtrMult
-    pump2 = y2Close > y2Open and y2Range >= y2Atr * dumpPumpMinAtrMult
-    prevFgd = dump2 and yClose > yOpen
-    prevFrd = pump2 and yClose < yOpen
-    dTradeDay = prevFgd or prevFrd
+    yFgd = (y2Close < y2Open and y2Range >= y2Atr * dumpPumpMinAtrMult) and yClose > yOpen
+    yFrd = (y2Close > y2Open and y2Range >= y2Atr * dumpPumpMinAtrMult) and yClose < yOpen
+    tradeDayToday = yFgd or yFrd
+    dTradeDay = tradeDayToday
     bias = dFgd ? 1 : dFrd ? -1 : 0
     array.set(arrBias, i, bias)
     array.set(arrIsFgd, i, dFgd)
@@ -375,7 +374,7 @@ for i = 0 to 0
     lastDTime = array.get(arrLastDBarTime, i)
     newDBar = na(lastDTime) or dTime != lastDTime
     array.set(arrLastDBarTime, i, dTime)
-    daytypeVisible = showDaytypeLabels and (not focusMode or not focusHideDaytype or inFocusDisplayWindow)
+    daytypeVisible = showDaytypeLabels and (not focus_mode or inFocusDisplayWindow)
     array.set(arrScannerFgdPulse, i, newDBar and daytypeVisible and dFgd)
     array.set(arrScannerFrdPulse, i, newDBar and daytypeVisible and dFrd)
     array.set(arrScannerTradePulse, i, newDBar and daytypeVisible and dTradeDay)
@@ -587,9 +586,9 @@ var bool firedB1Bar = false
 var bool firedB2Bar = false
 var bool firedB3Bar = false
 
-b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
-b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
-b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
+b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or allow_alerts_in_focus)
+b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or allow_alerts_in_focus)
+b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or allow_alerts_in_focus)
 alertcondition(b1AlertCond, "BLUE1 Retest Hit", "BLUE1 Retest Hit")
 alertcondition(b2AlertCond, "BLUE2 Reaction Confirmed", "BLUE2 Reaction Confirmed")
 alertcondition(b3AlertCond, "BLUE3 Manual Entry NOW", "BLUE3 ENTRY NOW")
@@ -605,14 +604,14 @@ showSignalsOnly = showChartLabels == "Signals only"
 showBlue12Labels = showSignalsOnly
 showBlue3Label = true
 
-if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focusMode or allowAlertsInFocus)
+if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focus_mode or allow_alerts_in_focus)
     firedB1Bar := true
     array.set(arrLastAlertB1, chartIdx, time)
     alert("BLUE1 Retest Hit | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
     if showBlue12Labels
         lb = label.new(bar_index, low, "Blue1", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.tiny)
         array.push(signalLabels, lb)
-if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, chartIdx), cooldownBlue2) and (not focusMode or allowAlertsInFocus)
+if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, chartIdx), cooldownBlue2) and (not focus_mode or allow_alerts_in_focus)
     firedB2Bar := true
     array.set(arrLastAlertB2, chartIdx, time)
     alert("BLUE2 Reaction Confirmed | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
@@ -620,7 +619,7 @@ if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, 
         lb = label.new(bar_index, low, "Blue2", style=label.style_label_up, color=color.new(color.blue, 30), textcolor=color.white, size=size.tiny)
         array.push(signalLabels, lb)
 
-if b3NowChart and not firedB3Bar and not f_inCooldown(array.get(arrLastAlertB3, chartIdx), cooldownBlue3) and (not focusMode or allowAlertsInFocus)
+if b3NowChart and not firedB3Bar and not f_inCooldown(array.get(arrLastAlertB3, chartIdx), cooldownBlue3) and (not focus_mode or allow_alerts_in_focus)
     firedB3Bar := true
     array.set(arrLastAlertB3, chartIdx, time)
     p = f_pipSize(chartSym)
@@ -695,6 +694,22 @@ if lineLifecycle == "Day End" and dayChanged
 
 // Chart marks
 
+if focus_mode and not inFocusDisplayWindow
+    if not na(entryLine)
+        line.delete(entryLine)
+        entryLine := na
+    if not na(tpLine)
+        line.delete(tpLine)
+        tpLine := na
+    if not na(slLine)
+        line.delete(slLine)
+        slLine := na
+    if not na(bosLine)
+        line.delete(bosLine)
+        bosLine := na
+    if not na(fvgBox)
+        box.delete(fvgBox)
+        fvgBox := na
 
 chartBosTime = array.get(arrBosTime, chartIdx)
 if shouldDraw and not na(chartBosTime) and chartBosTime != lastDrawnBosTime
@@ -715,9 +730,9 @@ if shouldDraw and not na(chartFvgTime) and chartFvgTime != lastDrawnFvgTime
 
 asiaHChart = array.get(arrAsiaH, chartIdx)
 asiaLChart = array.get(arrAsiaL, chartIdx)
-plot(asiaHChart, "Asia High", color=color.new(color.orange, 0), linewidth=1)
-plot(asiaLChart, "Asia Low", color=color.new(color.orange, 0), linewidth=1)
-plot(array.get(arrBosLevel, chartIdx), "BOS Level", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
+plot(focus_mode and not inFocusDisplayWindow ? na : asiaHChart, "Asia High", color=color.new(color.orange, 0), linewidth=1)
+plot(focus_mode and not inFocusDisplayWindow ? na : asiaLChart, "Asia Low", color=color.new(color.orange, 0), linewidth=1)
+plot(focus_mode and not inFocusDisplayWindow ? na : array.get(arrBosLevel, chartIdx), "BOS Level", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
 
 scannerFgdNow = array.get(arrScannerFgdPulse, chartIdx)
 scannerFrdNow = array.get(arrScannerFrdPulse, chartIdx)
@@ -731,54 +746,44 @@ blockedChart = array.get(arrBlocked, chartIdx)
 // =============================
 // Dashboard
 // =============================
-dashCols = debugMode ? 16 : 15
-var table dash = table.new(position.top_right, dashCols, 3, border_width=1)
+var table dash = table.new(position.top_right, 7, 4, border_width=1)
 if barstate.isfirst
     table.cell(dash, 0, 0, "SB Dashboard", bgcolor=color.new(color.black, 0), text_color=color.white)
     table.cell(dash, 1, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
     table.cell(dash, 2, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
-    headers = debugMode ? array.from("Symbol", "Bias【SB必要】", "MRN", "NY", "Asia", "Sweep", "BOS", "FVG", "Retest", "Blue1", "Blue2", "Blue3", "ScoreA", "ScoreA+", "State", "Debug") : array.from("Symbol", "Bias【SB必要】", "MRN", "NY", "Asia", "Sweep", "BOS", "FVG", "Retest", "Blue1", "Blue2", "Blue3", "ScoreA", "ScoreA+", "State")
-    for c = 0 to dashCols - 1
-        table.cell(dash, c, 1, array.get(headers, c), bgcolor=color.new(color.silver, 20))
-        table.cell(dash, c, 2, "")
+    table.cell(dash, 3, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 4, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 5, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 6, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
+
 if barstate.islast
-    table.cell_set_text(dash, 1, 0, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades))
-    table.cell_set_text(dash, 2, 0, "Blocked: " + blockedChart)
-    table.cell_set_text(dash, 3, 0, focusMode ? "Focus: " + str.tostring(focusY) + "-" + str.tostring(focusM) + "-" + str.tostring(focusD) + " 09:30" : "Focus: Live")
-    for r = 0 to 0
-        sym = chartTickerStd
-        bias = array.get(arrBias, r)
-        btxt = bias == 1 ? "FGD" : bias == -1 ? "FRD" : "NONE"
-        st = array.get(arrState, r)
-        mrnTxt = mrnBlock ? "BLOCK" : "OK"
-        nyTxt = array.get(arrInNy, r) ? "IN" : "OUT"
-        swTxt = str.tostring(array.get(arrSweepDir, r))
-        bosTxt = str.tostring(array.get(arrBosDir, r)) + "@" + str.tostring(array.get(arrBosLevel, r))
-        fvgTxt = useFvg ? (array.get(arrFvgMit, r) ? "Mit" : (not na(array.get(arrFvgU, r)) ? "Found" : "No")) : "Skip"
-        retTxt = st >= STATE_WAIT_RETEST ? "Wait/Hit" : "-"
-        b1t = not na(array.get(arrBlue1T, r)) ? "●" : "-"
-        b2t = not na(array.get(arrBlue2T, r)) ? "●" : "-"
-        b3t = not na(array.get(arrBlue3T, r)) ? "●" : "-"
-        table.cell_set_text(dash, 0, r + 2, sym)
-        table.cell_set_text(dash, 1, r + 2, btxt)
-        table.cell_set_text(dash, 2, r + 2, mrnTxt)
-        table.cell_set_text(dash, 3, r + 2, nyTxt)
-        table.cell_set_text(dash, 4, r + 2, st >= STATE_ASIA_READY ? "Y" : "N")
-        table.cell_set_text(dash, 5, r + 2, swTxt)
-        table.cell_set_text(dash, 6, r + 2, bosTxt)
-        table.cell_set_text(dash, 7, r + 2, fvgTxt)
-        table.cell_set_text(dash, 8, r + 2, retTxt)
-        table.cell_set_text(dash, 9, r + 2, b1t)
-        table.cell_set_text(dash, 10, r + 2, b2t)
-        table.cell_set_text(dash, 11, r + 2, b3t)
-        table.cell_set_text(dash, 12, r + 2, str.tostring(array.get(arrScoreA, r), "#.0"))
-        table.cell_set_text(dash, 13, r + 2, str.tostring(array.get(arrScoreAPlus, r), "#.0"))
-        hiddenTxt = array.get(arrDisplayOk, r) ? "" : " Hidden <" + str.tostring(minScoreToDisplay)
-        stateTxt = f_stateName(st) + hiddenTxt
-        table.cell_set_text(dash, 14, r + 2, stateTxt)
-        if debugMode
-            dbg = "pump=" + str.tostring(array.get(arrPumpDay, r)) + ",dump=" + str.tostring(array.get(arrDumpDay, r)) + " | isFRD=" + str.tostring(array.get(arrIsFrd, r)) + ",isFGD=" + str.tostring(array.get(arrIsFgd, r)) + " | hidden(score/focus)=" + str.tostring(array.get(arrHiddenByScore, r)) + "/" + str.tostring(array.get(arrHiddenByFocus, r)) + " | daytype=" + array.get(arrDaytypeStatus, r)
-            table.cell_set_text(dash, 15, r + 2, dbg)
+    st = array.get(arrState, 0)
+    tradeDayFlag = array.get(arrIsTradeDay, 0)
+    scoreA0 = array.get(arrScoreA, 0)
+    scoreAPlus0 = array.get(arrScoreAPlus, 0)
+    gradeTxt = scoreAPlus0 >= scoreThresholdAPlus ? "A+" : scoreA0 >= scoreThresholdA ? "A" : "A"
+    hiddenTxt = array.get(arrDisplayOk, 0) ? "N" : "Y"
+    focusTitle = "FOCUS: " + str.tostring(focusY) + "-" + str.tostring(focusM, "00") + "-" + str.tostring(focusD, "00") + " 09:30 NY | TradeDay=" + (tradeDayFlag ? "Y" : "N") + " | Grade=" + gradeTxt + " | Hidden<" + str.tostring(minScoreToDisplay) + "=" + hiddenTxt
+    table.cell_set_text(dash, 0, 0, focusTitle)
+    table.cell_set_text(dash, 0, 1, "Progress")
+    table.cell_set_text(dash, 1, 1, "Asia")
+    table.cell_set_text(dash, 2, 1, "Sweep")
+    table.cell_set_text(dash, 3, 1, "BOS")
+    table.cell_set_text(dash, 4, 1, "FVG")
+    table.cell_set_text(dash, 5, 1, "Retest")
+    table.cell_set_text(dash, 6, 1, "Blue3")
+
+    table.cell_set_text(dash, 0, 2, "State=" + f_stateName(st) + " | ScoreA=" + str.tostring(scoreA0, "#.0") + " | ScoreA+=" + str.tostring(scoreAPlus0, "#.0"))
+    table.cell_set_text(dash, 1, 2, st >= STATE_ASIA_READY ? "🟦" : "·")
+    table.cell_set_text(dash, 2, 2, st >= STATE_SWEPT ? "🟦" : "·")
+    table.cell_set_text(dash, 3, 2, st >= STATE_BOS_CONFIRMED ? "🟦" : "·")
+    table.cell_set_text(dash, 4, 2, useFvg ? (array.get(arrFvgMit, 0) ? "🟦" : "·") : "skip")
+    table.cell_set_text(dash, 5, 2, st >= STATE_BLUE1 ? "🟦" : "·")
+    table.cell_set_text(dash, 6, 2, not na(array.get(arrBlue3T, 0)) ? "🟦" : "·")
+
+    table.cell_set_text(dash, 0, 3, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades) + " | Blocked=" + array.get(arrBlocked, 0))
+    for c = 1 to 6
+        table.cell_set_text(dash, c, 3, "")
 
 // Training mode notes
 missNoBos = trainingMode and array.get(arrSweepCount, chartIdx) > array.get(arrBosCount, chartIdx)

@@ -224,34 +224,14 @@ isAPlus = activeGrade == "A+"
 for i = 0 to 3
     sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, i))
 
-    inNy5 = request.security(sym, "5", not na(time("5", nySession, timezoneInput)))
-    inAsia5 = request.security(sym, "5", not na(time("5", asiaSession, timezoneInput)))
-    nyStart5 = request.security(sym, "5", (not na(time("5", nySession, timezoneInput))) and na(time("5", nySession, timezoneInput)[1]))
+    [inNy5, inNy5Prev, inAsia5, h5, l5, o5, c5, ema5] = request.security(sym, "5", [not na(time("5", nySession, timezoneInput)), not na(time("5", nySession, timezoneInput))[1], not na(time("5", asiaSession, timezoneInput)), high, low, open, close, ta.ema(close, 20)])
+    nyStart5 = inNy5 and not inNy5Prev
 
-    h5 = request.security(sym, "5", high)
-    l5 = request.security(sym, "5", low)
-    o5 = request.security(sym, "5", open)
-    c5 = request.security(sym, "5", close)
-    ema5 = request.security(sym, "5", ta.ema(close, 20))
-
-    h15 = request.security(sym, "15", high)
-    l15 = request.security(sym, "15", low)
-    c15 = request.security(sym, "15", close)
-    atr15 = request.security(sym, "15", ta.atr(sweepAtrLen))
-
-    ph15 = request.security(sym, "15", ta.pivothigh(high, bosSwingLeft, bosSwingRight))
-    pl15 = request.security(sym, "15", ta.pivotlow(low, bosSwingLeft, bosSwingRight))
+    [h15, l15, c15, atr15, ph15, pl15, bullFvg, bearFvg, bullFvgUpper, bullFvgLower, bearFvgUpper, bearFvgLower] = request.security(sym, "15", [high, low, close, ta.atr(sweepAtrLen), ta.pivothigh(high, bosSwingLeft, bosSwingRight), ta.pivotlow(low, bosSwingLeft, bosSwingRight), low > high[2], high < low[2], low, high[2], low[2], high])
     if not na(ph15)
         array.set(arrSwingHigh, i, ph15)
     if not na(pl15)
         array.set(arrSwingLow, i, pl15)
-
-    bullFvg = request.security(sym, "15", low > high[2])
-    bearFvg = request.security(sym, "15", high < low[2])
-    bullFvgUpper = request.security(sym, "15", low)
-    bullFvgLower = request.security(sym, "15", high[2])
-    bearFvgUpper = request.security(sym, "15", low[2])
-    bearFvgLower = request.security(sym, "15", high)
 
     currentDay = f_dayKey(time, timezoneInput)
     lastDay = array.get(arrLastDay, i)
@@ -304,12 +284,7 @@ for i = 0 to 3
         state := STATE_ASIA_READY
 
     // Gates
-    dOpen = request.security(sym, "D", open)
-    dClose = request.security(sym, "D", close)
-    yOpen = request.security(sym, "D", open[1])
-    yClose = request.security(sym, "D", close[1])
-    yRange = request.security(sym, "D", high[1] - low[1])
-    yAtr = request.security(sym, "D", ta.atr(dayMoveAtrLen)[1])
+    [dOpen, dClose, yOpen, yClose, yRange, yAtr] = request.security(sym, "D", [open, close, open[1], close[1], high[1] - low[1], ta.atr(dayMoveAtrLen)[1]])
     dumpYesterday = yClose < yOpen and yRange >= yAtr * dumpPumpMinAtrMult
     pumpYesterday = yClose > yOpen and yRange >= yAtr * dumpPumpMinAtrMult
     bias = dumpYesterday and dClose > dOpen ? 1 : pumpYesterday and dClose < dOpen ? -1 : 0
@@ -579,7 +554,8 @@ if lineLifecycle == "Session End" and not array.get(arrInNy, chartIdx)
     if not na(slLine)
         line.delete(slLine)
         slLine := na
-if lineLifecycle == "Day End" and ta.change(dayofmonth(time, timezoneInput)) != 0
+dayChanged = ta.change(dayofmonth(time, timezoneInput)) != 0
+if lineLifecycle == "Day End" and dayChanged
     if not na(entryLine)
         line.delete(entryLine)
         entryLine := na

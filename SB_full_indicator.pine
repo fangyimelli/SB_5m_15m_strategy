@@ -811,7 +811,7 @@ if barstate.islast
           "BOS=" + bosText + "\n" +
           "FVG=" + fvgText + "\n" +
           "Retest=" + retestText + "\n" +
-          "BOS Dir=" + (hasSnap ? (bosDirSnap == 1 ? "Bull" : bosDirSnap == -1 ? "Bear" : "—") : "—") + "\n" +
+          "BOS Dir=" + (foundSnap ? (bosDirSnap == 1 ? "Bull" : bosDirSnap == -1 ? "Bear" : "—") : "—") + "\n" +
           "Blue1=" + blue1Text + "\n" +
           "Blue2=" + blue2Text + "\n" +
           "Blue3=" + blue3Text + "\n" +

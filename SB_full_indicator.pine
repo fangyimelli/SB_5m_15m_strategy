@@ -286,13 +286,7 @@ focusM = month(focusSourceTs, timezoneInput)
 focusD = dayofmonth(focusSourceTs, timezoneInput)
 focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
 focusDayKey = f_dayKey(focusAnchor, timezoneInput)
-
-focus_input_raw_ts = focus_input == 0 ? timenow : focus_input
-focusY_UTC = year(focus_input_raw_ts, "UTC")
-focusM_UTC = month(focus_input_raw_ts, "UTC")
-focusD_UTC = dayofmonth(focus_input_raw_ts, "UTC")
-focusAnchorNY = timestamp(timezoneInput, focusY_UTC, focusM_UTC, focusD_UTC, 9, 30)
-focusDayKeyDbg = f_dayKey(focusAnchorNY, timezoneInput)
+focusAnchorNY = focusAnchor
 
 barDayKey = f_dayKey(time, timezoneInput)
 condFocusDay = barDayKey == focusDayKey
@@ -831,19 +825,17 @@ if barstate.islast
         hudX = bar_index - hud_x_bars_offset
         hudTxt = "焦點日快照=" + focusDateText + " 09:30 NY\n" +
           (debugMode ? (
-          "focus_input_raw_ts=" + str.format_time(focus_input_raw_ts, "yyyy-MM-dd HH:mm", "UTC") + " UTC\n" +
-          "focusYMD_UTC=" + str.tostring(focusY_UTC) + "-" + str.tostring(focusM_UTC, "00") + "-" + str.tostring(focusD_UTC, "00") + "\n" +
-          "focusAnchorNY=" + str.format_time(focusAnchorNY, "yyyy-MM-dd", timezoneInput) + "\n" +
-          "focusDayKey=" + str.tostring(focusDayKeyDbg) + "\n" +
+          "focusAnchorNY=" + str.format_time(focusAnchorNY, "yyyy-MM-dd", timezoneInput) + " | focusDayKey=" + str.tostring(focusDayKey) + "\n" +
           "last t5=" + (na(lastT5) ? "—" : str.format_time(lastT5, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n" +
           "last dayKey5=" + str.tostring(lastDayKey5) + " | last inNy5=" + f_mark(lastInNy5) + " | last inAsia5=" + f_mark(lastInAsia5) + "\n" +
           "condFocusDay5_last=" + f_mark(lastCondFocusDay5) + "\n" +
           "condFocusNY5_last=" + f_mark(lastCondFocusNY5) + "\n" +
-          "nyBarsInFocusDay=" + str.tostring(nyBarsInFocusDay) + "\n" +
+          "nyBarsInFocusDay=" + str.tostring(nyBarsInFocusDay) +
+          (nyBarsInFocusDay == 0 ? " ⚠️ Focus 日的 5m NY 資料尚未載入，請切到 5m 並拉到該日期附近" : "") + "\n" +
           "stSnap_isNA=" + f_mark(not na(stSnap)) +
           (not na(stSnap) ? " | stSnap=" + str.tostring(stSnap) : "") +
           (na(lastNYBarTimeUsed) ? "" : "\nlastNYBarTimeUsed=" + str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n"
-          ) : (hud_show_focus_debug ? ("focusDayKey=" + str.tostring(focusDayKey) + " | foundSnap=" + (foundSnap ? "Y" : "N") + (na(lastNYBarTimeUsed) ? "" : " | lastNYBarTimeUsed=" + str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n") : "")) +
+          ) : (hud_show_focus_debug ? ("focusAnchorNY=" + str.format_time(focusAnchorNY, "yyyy-MM-dd", timezoneInput) + " | focusDayKey=" + str.tostring(focusDayKey) + " | foundSnap=" + (foundSnap ? "Y" : "N") + (na(lastNYBarTimeUsed) ? "" : " | lastNYBarTimeUsed=" + str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n") : "")) +
           "TradeDay=" + tradeDayText + "\n" +
           "Grade=" + gradeHud + "\n" +
           "NY=" + nyText + "\n" +

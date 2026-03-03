@@ -2,6 +2,14 @@
 
 ## What changed (latest)
 
+- 2026-03-03 Focus HUD snapshot fix (focus_mode):
+  - Kept day-key focus judgement: `focusDayKey = f_dayKey(focusAnchor, timezoneInput)`, `barDayKey = f_dayKey(time, timezoneInput)`, `condFocusDay = barDayKey == focusDayKey`.
+  - HUD fields in `focus_mode=true` now use `ta.valuewhen(condFocusDay, <series>, 0)` to read focus-day snapshot rather than relying on last-bar date context.
+  - Applied snapshot retrieval to: `state`, `isTradeDay`, `inNY`, `BOS/FVG/Retest/Blue1/Blue2/Blue3`, `ScoreA/ScoreA+`.
+  - Removed focus masked fallback (`focus_mode && !isInFocusDay` => `—/⛔`). Now HUD shows `—` only when the selected focus-day snapshot is unavailable (`valuewhen` returns `na`, e.g. selected day not loaded in history).
+  - HUD debug keeps `barDayKey/focusDayKey` and adds `focusSnapshot=OK/NA`.
+  - HUD title updated to `焦點日快照=YYYY-MM-DD 09:30 NY`.
+
 - 2026-03-03 Focus-mode day/session gating fix:
   - Replaced focus day check from timestamp window (`focusDayStart/focusDayEnd`) to day-key comparison: `focusDayKey = f_dayKey(focusAnchor, timezoneInput)`, `barDayKey = f_dayKey(time, timezoneInput)`, `isInFocusDay = barDayKey == focusDayKey`.
   - Added `isInFocusNYSession = time >= focusNYStart and time < focusNYEnd` and switched focus filters for draw/Blue/alerts to NY-session scope in focus mode.

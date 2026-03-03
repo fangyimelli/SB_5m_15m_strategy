@@ -1,6 +1,8 @@
-//@version=5
+//@version=6
 // NOTE: This script intentionally contains exactly ONE declaration statement: indicator().
 indicator("SB Full Manual Workflow (Indicator)", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=200)
+
+chartTickerStd = ticker.standard(syminfo.tickerid)
 
 // =============================
 // 0) Inputs
@@ -134,23 +136,6 @@ f_wickReject(_dir, _o, _h, _l, _c) =>
     lower = (math.min(_o, _c) - _l) / rng
     _dir == 1 ? (lower >= rejectWickRatioMin and body <= rejectBodyRatioMax) : (upper >= rejectWickRatioMin and body <= rejectBodyRatioMax)
 
-f_bias(_sym) =>
-    dOpen = request.security(_sym, "D", open)
-    dClose = request.security(_sym, "D", close)
-    dHigh = request.security(_sym, "D", high)
-    dLow = request.security(_sym, "D", low)
-    dAtr = request.security(_sym, "D", ta.atr(dayMoveAtrLen))
-    yOpen = request.security(_sym, "D", open[1])
-    yClose = request.security(_sym, "D", close[1])
-    yHigh = request.security(_sym, "D", high[1])
-    yLow = request.security(_sym, "D", low[1])
-    yAtr = request.security(_sym, "D", ta.atr(dayMoveAtrLen)[1])
-    dumpYesterday = yClose < yOpen and (yHigh - yLow) >= yAtr * dumpPumpMinAtrMult
-    pumpYesterday = yClose > yOpen and (yHigh - yLow) >= yAtr * dumpPumpMinAtrMult
-    fgd = dumpYesterday and dClose > dOpen
-    frd = pumpYesterday and dClose < dOpen
-    fgd ? 1 : frd ? -1 : 0
-
 f_score(_inNy, _sweep, _bos, _fvg, _entry) =>
     raw = (_inNy ? scoreWNy : 0) + (_sweep ? scoreWSweep : 0) + (_bos ? scoreWBos : 0) + (_fvg ? scoreWFvg : 0) + (_entry ? scoreWEntry : 0)
     math.min(100, raw)
@@ -237,7 +222,7 @@ isAPlus = activeGrade == "A+"
 // Core per-symbol engine
 // =============================
 for i = 0 to 3
-    sym = mode == "Chart(single)" ? syminfo.tickerid : array.get(arrSyms, i)
+    sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, i))
 
     inNy5 = request.security(sym, "5", not na(time("5", nySession, timezoneInput)))
     inAsia5 = request.security(sym, "5", not na(time("5", asiaSession, timezoneInput)))
@@ -319,7 +304,15 @@ for i = 0 to 3
         state := STATE_ASIA_READY
 
     // Gates
-    bias = f_bias(sym)
+    dOpen = request.security(sym, "D", open)
+    dClose = request.security(sym, "D", close)
+    yOpen = request.security(sym, "D", open[1])
+    yClose = request.security(sym, "D", close[1])
+    yRange = request.security(sym, "D", high[1] - low[1])
+    yAtr = request.security(sym, "D", ta.atr(dayMoveAtrLen)[1])
+    dumpYesterday = yClose < yOpen and yRange >= yAtr * dumpPumpMinAtrMult
+    pumpYesterday = yClose > yOpen and yRange >= yAtr * dumpPumpMinAtrMult
+    bias = dumpYesterday and dClose > dOpen ? 1 : pumpYesterday and dClose < dOpen ? -1 : 0
     array.set(arrBias, i, bias)
     biasOk = not requireSbDayType or ((bias == 1 and bosDir >= 0) or (bias == -1 and bosDir <= 0) or bosDir == 0)
 
@@ -483,8 +476,8 @@ for i = 0 to 3
     hasBos = state >= STATE_BOS_CONFIRMED or not na(bosTime)
     hasFvgMit = useFvg ? array.get(arrFvgMit, i) : false
     hasEntryPath = state >= STATE_BLUE2
-    scoreA = f_score(inNy5, hasSweep, hasBos, useFvg ? hasFvgMit : false, hasEntryPath)
-    scoreAplus = f_score(inNy5, hasSweep, hasBos, useFvg ? hasFvgMit : false, state >= STATE_BLUE3)
+    scoreA = scoreEnabled ? f_score(inNy5, hasSweep, hasBos, useFvg ? hasFvgMit : false, hasEntryPath) : 0
+    scoreAplus = scoreEnabled ? f_score(inNy5, hasSweep, hasBos, useFvg ? hasFvgMit : false, state >= STATE_BLUE3) : 0
     array.set(arrScoreA, i, scoreA)
     array.set(arrScoreAPlus, i, scoreAplus)
 
@@ -521,7 +514,7 @@ if mode == "Portfolio(4 symbols)"
 // =============================
 // Alerts + Drawing (chart symbol focus)
 // =============================
-chartIdx = mode == "Chart(single)" ? 0 : (syminfo.tickerid == symbol1 ? 0 : syminfo.tickerid == symbol2 ? 1 : syminfo.tickerid == symbol3 ? 2 : syminfo.tickerid == symbol4 ? 3 : 0)
+chartIdx = mode == "Chart(single)" ? 0 : (chartTickerStd == ticker.standard(symbol1) ? 0 : chartTickerStd == ticker.standard(symbol2) ? 1 : chartTickerStd == ticker.standard(symbol3) ? 2 : chartTickerStd == ticker.standard(symbol4) ? 3 : 0)
 
 b1NowChart = array.get(arrBlue1Now, chartIdx)
 b2NowChart = array.get(arrBlue2Now, chartIdx)
@@ -627,7 +620,7 @@ if barstate.islast
     for c = 0 to 14
         table.cell(dash, c, 1, array.get(headers, c), bgcolor=color.new(color.silver, 20))
     for r = 0 to 3
-        sym = mode == "Chart(single)" ? syminfo.ticker : array.get(arrSyms, r)
+        sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, r))
         bias = array.get(arrBias, r)
         btxt = bias == 1 ? "FGD" : bias == -1 ? "FRD" : "NONE"
         st = array.get(arrState, r)

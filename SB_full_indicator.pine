@@ -97,7 +97,7 @@ trainingMode = input.bool(false, "Training mode")
 tradeDayOnly = input.bool(true, "Trade Day only (enable full flow only on Trade Day)")
 
 focus_mode = input.bool(false, "Focus mode (NY 09:30 anchor)")
-focus_trade_day_ny0930 = input.time(0, "Focus trade day NY 09:30 (0 = today)")
+focus_input = input.time(0, "Focus trade day NY 09:30 (0 = today)")
 allow_alerts_in_focus = input.bool(false, "Allow alerts in focus mode")
 debugMode = input.bool(false, "Debug mode (dashboard-only daytype diagnostics)")
 
@@ -279,7 +279,7 @@ if na(portfolioDayKey) or dayNow != portfolioDayKey
 activeGrade = liveGradeMode == "Manual" ? manualGrade : (autoDowngrade ? "A" : manualGrade)
 isAPlus = activeGrade == "A+"
 
-focusSourceTs = focus_trade_day_ny0930 == 0 ? timenow : focus_trade_day_ny0930
+focusSourceTs = focus_input == 0 ? timenow : focus_input
 focusY = year(focusSourceTs, timezoneInput)
 focusM = month(focusSourceTs, timezoneInput)
 focusD = dayofmonth(focusSourceTs, timezoneInput)
@@ -289,10 +289,8 @@ focusDayEnd = focusDayStart + 24 * 60 * 60000
 sessMinutes = f_session_minutes(nySession)
 focusNYStart = focusAnchor
 focusNYEnd = focusNYStart + sessMinutes * 60000
-focusAsiaStart = focusDayStart - 4 * 60 * 60000
-focusAsiaEnd = focusDayStart
-inFocusCalcWindow = focus_mode ? (time >= focusAsiaStart and time <= focusNYEnd) : true
-inFocusDisplayWindow = focus_mode ? (time >= focusNYStart and time <= focusNYEnd) : true
+isInFocusDay = time >= focusDayStart and time < focusDayEnd
+focusDateText = str.tostring(focusY) + "-" + str.tostring(focusM, "00") + "-" + str.tostring(focusD, "00")
 
 // =============================
 // Core per-symbol engine
@@ -324,7 +322,7 @@ for i = 0 to 0
 
     currentDay = f_dayKey(time, timezoneInput)
     lastDay = array.get(arrLastDay, i)
-    if (not focus_mode) and (na(lastDay) or currentDay != lastDay)
+    if na(lastDay) or currentDay != lastDay
         array.set(arrLastDay, i, currentDay)
         array.set(arrState, i, STATE_IDLE)
         array.set(arrAsiaH, i, na)
@@ -362,14 +360,14 @@ for i = 0 to 0
     array.set(arrBlue3Now, i, false)
 
     // 【加分】Asia range build
-    if inFocusCalcWindow and inAsia5 and (not prefilterLock or not inNy5)
+    if inAsia5 and (not prefilterLock or not inNy5)
         asiaH := na(asiaH) ? h5 : math.max(asiaH, h5)
         asiaL := na(asiaL) ? l5 : math.min(asiaL, l5)
         array.set(arrAsiaH, i, asiaH)
         array.set(arrAsiaL, i, asiaL)
-    if inFocusCalcWindow and not inAsia5 and not na(asiaH) and not na(asiaL) and state == STATE_IDLE
+    if not inAsia5 and not na(asiaH) and not na(asiaL) and state == STATE_IDLE
         state := STATE_ASIA_READY
-    if inFocusCalcWindow and prefilterLock and nyStart5 and state < STATE_SWEPT and not na(asiaH) and not na(asiaL)
+    if prefilterLock and nyStart5 and state < STATE_SWEPT and not na(asiaH) and not na(asiaL)
         state := STATE_ASIA_READY
 
     // Gates
@@ -393,7 +391,7 @@ for i = 0 to 0
     lastDTime = array.get(arrLastDBarTime, i)
     newDBar = na(lastDTime) or dTime != lastDTime
     array.set(arrLastDBarTime, i, dTime)
-    daytypeVisible = showDaytypeLabels and (not focus_mode or inFocusDisplayWindow)
+    daytypeVisible = showDaytypeLabels and (not focus_mode or isInFocusDay)
     array.set(arrScannerFgdPulse, i, newDBar and daytypeVisible and dFgd)
     array.set(arrScannerFrdPulse, i, newDBar and daytypeVisible and dFrd)
     array.set(arrScannerTradePulse, i, newDBar and daytypeVisible and dTradeDay)
@@ -571,7 +569,7 @@ for i = 0 to 0
     displayOk = math.max(scoreA, scoreAplus) >= minScoreToDisplay
     array.set(arrDisplayOk, i, displayOk)
     array.set(arrHiddenByScore, i, not displayOk)
-    array.set(arrHiddenByFocus, i, not inFocusDisplayWindow)
+    array.set(arrHiddenByFocus, i, focus_mode and not isInFocusDay)
 
 // =============================
 // Alerts + Drawing (chart symbol focus)
@@ -585,7 +583,7 @@ chartDir = array.get(arrBosDir, chartIdx)
 chartBos = array.get(arrBosLevel, chartIdx)
 chartSym = chartTickerStd
 chartScore = isAPlus ? array.get(arrScoreAPlus, chartIdx) : array.get(arrScoreA, chartIdx)
-shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and inFocusDisplayWindow and array.get(arrDisplayOk, chartIdx)
+shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and (not focus_mode or isInFocusDay) and array.get(arrDisplayOk, chartIdx)
 b1NowChart = shouldDraw and b1NowChartRaw
 b2NowChart = shouldDraw and b2NowChartRaw
 b3NowChart = shouldDraw and b3NowChartRaw
@@ -606,9 +604,9 @@ var bool firedB1Bar = false
 var bool firedB2Bar = false
 var bool firedB3Bar = false
 
-b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or allow_alerts_in_focus)
-b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or allow_alerts_in_focus)
-b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or allow_alerts_in_focus)
+b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
+b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
+b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
 alertcondition(b1AlertCond, "BLUE1 Retest Hit", "BLUE1 Retest Hit")
 alertcondition(b2AlertCond, "BLUE2 Reaction Confirmed", "BLUE2 Reaction Confirmed")
 alertcondition(b3AlertCond, "BLUE3 Manual Entry NOW", "BLUE3 ENTRY NOW")
@@ -624,14 +622,14 @@ showSignalsOnly = showChartLabels == "Signals only"
 showBlue12Labels = showSignalsOnly
 showBlue3Label = true
 
-if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focus_mode or allow_alerts_in_focus)
+if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
     firedB1Bar := true
     array.set(arrLastAlertB1, chartIdx, time)
     alert("BLUE1 Retest Hit | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
     if showBlue12Labels
         lb = label.new(bar_index, low, "Blue1", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.tiny)
         array.push(signalLabels, lb)
-if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, chartIdx), cooldownBlue2) and (not focus_mode or allow_alerts_in_focus)
+if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, chartIdx), cooldownBlue2) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
     firedB2Bar := true
     array.set(arrLastAlertB2, chartIdx, time)
     alert("BLUE2 Reaction Confirmed | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
@@ -639,7 +637,7 @@ if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, 
         lb = label.new(bar_index, low, "Blue2", style=label.style_label_up, color=color.new(color.blue, 30), textcolor=color.white, size=size.tiny)
         array.push(signalLabels, lb)
 
-if b3NowChart and not firedB3Bar and not f_inCooldown(array.get(arrLastAlertB3, chartIdx), cooldownBlue3) and (not focus_mode or allow_alerts_in_focus)
+if b3NowChart and not firedB3Bar and not f_inCooldown(array.get(arrLastAlertB3, chartIdx), cooldownBlue3) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
     firedB3Bar := true
     array.set(arrLastAlertB3, chartIdx, time)
     p = f_pipSize(chartSym)
@@ -714,7 +712,7 @@ if lineLifecycle == "Day End" and dayChanged
 
 // Chart marks
 
-if focus_mode and not inFocusDisplayWindow
+if focus_mode and not isInFocusDay
     if not na(entryLine)
         line.delete(entryLine)
         entryLine := na
@@ -750,9 +748,9 @@ if shouldDraw and not na(chartFvgTime) and chartFvgTime != lastDrawnFvgTime
 
 asiaHChart = array.get(arrAsiaH, chartIdx)
 asiaLChart = array.get(arrAsiaL, chartIdx)
-plot(focus_mode and not inFocusDisplayWindow ? na : asiaHChart, "Asia High", color=color.new(color.orange, 0), linewidth=1)
-plot(focus_mode and not inFocusDisplayWindow ? na : asiaLChart, "Asia Low", color=color.new(color.orange, 0), linewidth=1)
-plot(focus_mode and not inFocusDisplayWindow ? na : array.get(arrBosLevel, chartIdx), "BOS Level", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
+plot(focus_mode and not isInFocusDay ? na : asiaHChart, "Asia High", color=color.new(color.orange, 0), linewidth=1)
+plot(focus_mode and not isInFocusDay ? na : asiaLChart, "Asia Low", color=color.new(color.orange, 0), linewidth=1)
+plot(focus_mode and not isInFocusDay ? na : array.get(arrBosLevel, chartIdx), "BOS Level", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
 
 scannerFgdNow = array.get(arrScannerFgdPulse, chartIdx)
 scannerFrdNow = array.get(arrScannerFrdPulse, chartIdx)
@@ -771,17 +769,29 @@ if barstate.islast
         stHud = array.get(arrState, chartIdx)
         scoreAHud = array.get(arrScoreA, chartIdx)
         scoreAPlusHud = array.get(arrScoreAPlus, chartIdx)
+        tradeDayHud = array.get(arrIsTradeDay, chartIdx)
+        focusMasked = focus_mode and not isInFocusDay
+        bosText = focusMasked ? "—" : f_mark(stHud >= STATE_BOS_CONFIRMED)
+        fvgText = focusMasked ? "—" : f_mark(useFvg ? array.get(arrFvgMit, chartIdx) : true)
+        retestText = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE1)
+        blue1Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE1)
+        blue2Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE2)
+        blue3Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE3)
+        scoreAText = focusMasked ? "—" : f_mark(scoreAHud >= scoreThresholdA) + " (" + str.tostring(scoreAHud, "#.0") + ")"
+        scoreAPlusText = focusMasked ? "—" : f_mark(scoreAPlusHud >= scoreThresholdAPlus) + " (" + str.tostring(scoreAPlusHud, "#.0") + ")"
+        tradeDayText = focusMasked ? "—" : (tradeDayHud ? "Y" : "N")
         hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
         hudX = bar_index - hud_x_bars_offset
         hudTxt = "SB HUD\n" +
-          "BOS " + f_mark(stHud >= STATE_BOS_CONFIRMED) +
-          " | FVG " + f_mark(useFvg ? array.get(arrFvgMit, chartIdx) : true) +
-          " | Retest " + f_mark(stHud >= STATE_BLUE1) + "\n" +
-          "Blue1 " + f_mark(stHud >= STATE_BLUE1) +
-          " | Blue2 " + f_mark(stHud >= STATE_BLUE2) +
-          " | Blue3 " + f_mark(stHud >= STATE_BLUE3) + "\n" +
-          "ScoreA " + f_mark(scoreAHud >= scoreThresholdA) + " (" + str.tostring(scoreAHud, "#.0") + ")" +
-          " | ScoreA+ " + f_mark(scoreAPlusHud >= scoreThresholdAPlus) + " (" + str.tostring(scoreAPlusHud, "#.0") + ")" + "\n" +
+          "BOS " + bosText +
+          " | FVG " + fvgText +
+          " | Retest " + retestText + "\n" +
+          "Blue1 " + blue1Text +
+          " | Blue2 " + blue2Text +
+          " | Blue3 " + blue3Text + "\n" +
+          "ScoreA " + scoreAText +
+          " | ScoreA+ " + scoreAPlusText + "\n" +
+          "Focus anchor(Y-M-D)=" + focusDateText + " 09:30 NY | tradeDayToday=" + tradeDayText + "\n" +
           "入場規則=Blue3✅才手動進場"
         if na(hudLbl)
             hudLbl := label.new(hudX, hudY, hudTxt, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, textalign=f_hudTextAlign(hud_align), color=color.new(color.black, hud_bg_opacity), textcolor=color.white, size=f_hudSize(hud_text_size))
@@ -817,7 +827,7 @@ if barstate.islast
     scoreAPlus0 = array.get(arrScoreAPlus, 0)
     gradeTxt = scoreAPlus0 >= scoreThresholdAPlus ? "A+" : scoreA0 >= scoreThresholdA ? "A" : "A"
     hiddenTxt = array.get(arrDisplayOk, 0) ? "N" : "Y"
-    focusTitle = "FOCUS: " + str.tostring(focusY) + "-" + str.tostring(focusM, "00") + "-" + str.tostring(focusD, "00") + " 09:30 NY | TradeDay=" + (tradeDayFlag ? "Y" : "N") + " | Grade=" + gradeTxt + " | Hidden<" + str.tostring(minScoreToDisplay) + "=" + hiddenTxt
+    focusTitle = "FOCUS: " + focusDateText + " 09:30 NY | TradeDay=" + (tradeDayFlag ? "Y" : "N") + " | Grade=" + gradeTxt + " | Hidden<" + str.tostring(minScoreToDisplay) + "=" + hiddenTxt
     table.cell_set_text(dash, 0, 0, focusTitle)
     table.cell_set_text(dash, 0, 1, "Progress")
     table.cell_set_text(dash, 1, 1, "Asia")

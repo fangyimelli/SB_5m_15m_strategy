@@ -283,12 +283,13 @@ focusY = year(focusSourceTs, timezoneInput)
 focusM = month(focusSourceTs, timezoneInput)
 focusD = dayofmonth(focusSourceTs, timezoneInput)
 focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
-focusDayStart = timestamp(timezoneInput, focusY, focusM, focusD, 0, 0)
-focusDayEnd = focusDayStart + 24 * 60 * 60000
+focusDayKey = f_dayKey(focusAnchor, timezoneInput)
+barDayKey = f_dayKey(time, timezoneInput)
 sessMinutes = f_session_minutes(nySession)
 focusNYStart = focusAnchor
 focusNYEnd = focusNYStart + sessMinutes * 60000
-isInFocusDay = time >= focusDayStart and time < focusDayEnd
+isInFocusDay = barDayKey == focusDayKey
+isInFocusNYSession = time >= focusNYStart and time < focusNYEnd
 focusDateText = str.tostring(focusY) + "-" + str.tostring(focusM, "00") + "-" + str.tostring(focusD, "00")
 
 // =============================
@@ -582,7 +583,7 @@ chartDir = array.get(arrBosDir, chartIdx)
 chartBos = array.get(arrBosLevel, chartIdx)
 chartSym = chartTickerStd
 chartScore = isAPlus ? array.get(arrScoreAPlus, chartIdx) : array.get(arrScoreA, chartIdx)
-shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and (not focus_mode or isInFocusDay) and array.get(arrDisplayOk, chartIdx)
+shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and (not focus_mode or isInFocusNYSession) and array.get(arrDisplayOk, chartIdx)
 b1NowChart = shouldDraw and b1NowChartRaw
 b2NowChart = shouldDraw and b2NowChartRaw
 b3NowChart = shouldDraw and b3NowChartRaw
@@ -603,9 +604,9 @@ var bool firedB1Bar = false
 var bool firedB2Bar = false
 var bool firedB3Bar = false
 
-b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
-b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
-b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
+b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusNYSession))
+b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusNYSession))
+b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focus_mode or (allow_alerts_in_focus and isInFocusNYSession))
 alertcondition(b1AlertCond, "BLUE1 Retest Hit", "BLUE1 Retest Hit")
 alertcondition(b2AlertCond, "BLUE2 Reaction Confirmed", "BLUE2 Reaction Confirmed")
 alertcondition(b3AlertCond, "BLUE3 Manual Entry NOW", "BLUE3 ENTRY NOW")
@@ -621,14 +622,14 @@ showSignalsOnly = showChartLabels == "Signals only"
 showBlue12Labels = false
 showBlue3Label = true
 
-if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
+if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focus_mode or (allow_alerts_in_focus and isInFocusNYSession))
     firedB1Bar := true
     array.set(arrLastAlertB1, chartIdx, time)
     alert("BLUE1 Retest Hit | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
     if showBlue12Labels
         lb = label.new(bar_index, low, "Blue1", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.tiny)
         array.push(signalLabels, lb)
-if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, chartIdx), cooldownBlue2) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
+if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, chartIdx), cooldownBlue2) and (not focus_mode or (allow_alerts_in_focus and isInFocusNYSession))
     firedB2Bar := true
     array.set(arrLastAlertB2, chartIdx, time)
     alert("BLUE2 Reaction Confirmed | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
@@ -636,7 +637,7 @@ if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, 
         lb = label.new(bar_index, low, "Blue2", style=label.style_label_up, color=color.new(color.blue, 30), textcolor=color.white, size=size.tiny)
         array.push(signalLabels, lb)
 
-if b3NowChart and not firedB3Bar and not f_inCooldown(array.get(arrLastAlertB3, chartIdx), cooldownBlue3) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
+if b3NowChart and not firedB3Bar and not f_inCooldown(array.get(arrLastAlertB3, chartIdx), cooldownBlue3) and (not focus_mode or (allow_alerts_in_focus and isInFocusNYSession))
     firedB3Bar := true
     array.set(arrLastAlertB3, chartIdx, time)
     p = f_pipSize(chartSym)
@@ -785,6 +786,7 @@ if barstate.islast
         hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
         hudX = bar_index - hud_x_bars_offset
         hudTxt = "日期=" + focusDateText + " 09:30 NY\n" +
+          "barDayKey=" + str.tostring(barDayKey) + " | focusDayKey=" + str.tostring(focusDayKey) + "\n" +
           "TradeDay=" + tradeDayText + "\n" +
           "Grade=" + gradeHud + "\n" +
           "NY=" + nyText + "\n" +

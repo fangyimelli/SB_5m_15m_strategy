@@ -100,7 +100,7 @@ trainingMode = input.bool(false, "Training mode")
 tradeDayOnly = input.bool(true, "Trade Day only (enable full flow only on Trade Day)")
 
 focusMode = input.bool(false, "Focus mode (lock to one NY date)")
-focusDateNy0930 = input.time(timestamp("America/New_York", year(timenow, "America/New_York"), month(timenow, "America/New_York"), dayofmonth(timenow, "America/New_York"), 9, 30), "Focus date NY 09:30")
+focusDateNy0930 = input.time(timestamp("America/New_York", 2025, 1, 2, 9, 30), "Focus date NY 09:30")
 focusWindow = input.string("SessionOnly", "Focus window", options=["SessionOnly", "FullDay"])
 allowAlertsInFocus = input.bool(false, "Allow alerts in focus mode")
 
@@ -169,6 +169,21 @@ f_session_minutes(_sess) =>
     endMin = eh * 60 + em
     dur = endMin - startMin
     dur <= 0 ? dur + 24 * 60 : dur
+
+
+f_req5(_nySession, _asiaSession, _tz) =>
+    ema = ta.ema(close, 20)
+    [not na(time("5", _nySession, _tz)), not na(time("5", _nySession, _tz))[1], not na(time("5", _asiaSession, _tz)), high, low, open, close, ema]
+
+f_req15(_sweepAtrLen, _bosL, _bosR) =>
+    atr = ta.atr(_sweepAtrLen)
+    ph = ta.pivothigh(high, _bosL, _bosR)
+    pl = ta.pivotlow(low, _bosL, _bosR)
+    [high, low, close, atr, ph, pl, low > high[2], high < low[2], low, high[2], low[2], high]
+
+f_reqD(_dayAtrLen) =>
+    atr = ta.atr(_dayAtrLen)
+    [open, close, open[1], close[1], high[1] - low[1], high[2] - low[2], atr[1], atr[2], close[2] < open[2], close[2] > open[2], time]
 
 // =============================
 // Per-symbol state arrays (0..3)
@@ -277,10 +292,10 @@ inFocusDisplayWindow = focusMode ? (time >= (focusWindow == "FullDay" ? focusDay
 for i = 0 to 3
     sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, i))
 
-    [inNy5, inNy5Prev, inAsia5, h5, l5, o5, c5, ema5] = request.security(sym, "5", [not na(time("5", nySession, timezoneInput)), not na(time("5", nySession, timezoneInput))[1], not na(time("5", asiaSession, timezoneInput)), high, low, open, close, ta.ema(close, 20)])
+    [inNy5, inNy5Prev, inAsia5, h5, l5, o5, c5, ema5] = request.security(sym, "5", f_req5(nySession, asiaSession, timezoneInput))
     nyStart5 = inNy5 and not inNy5Prev
 
-    [h15, l15, c15, atr15, ph15, pl15, bullFvg, bearFvg, bullFvgUpper, bullFvgLower, bearFvgUpper, bearFvgLower] = request.security(sym, "15", [high, low, close, ta.atr(sweepAtrLen), ta.pivothigh(high, bosSwingLeft, bosSwingRight), ta.pivotlow(low, bosSwingLeft, bosSwingRight), low > high[2], high < low[2], low, high[2], low[2], high])
+    [h15, l15, c15, atr15, ph15, pl15, bullFvg, bearFvg, bullFvgUpper, bullFvgLower, bearFvgUpper, bearFvgLower] = request.security(sym, "15", f_req15(sweepAtrLen, bosSwingLeft, bosSwingRight))
     if not na(ph15)
         array.set(arrSwingHigh, i, ph15)
     if not na(pl15)
@@ -337,10 +352,15 @@ for i = 0 to 3
         state := STATE_ASIA_READY
 
     // Gates
-    [dOpen, dClose, yOpen, yClose, yRange, yAtr, dTime, dFgd, dFrd, dTradeDay] = request.security(sym, "D", [open, close, open[1], close[1], high[1] - low[1], ta.atr(dayMoveAtrLen)[1], time, (close[1] < open[1] and (high[1]-low[1]) >= ta.atr(dayMoveAtrLen)[1] * dumpPumpMinAtrMult and close > open), (close[1] > open[1] and (high[1]-low[1]) >= ta.atr(dayMoveAtrLen)[1] * dumpPumpMinAtrMult and close < open), ((close[2] < open[2] and (high[2]-low[2]) >= ta.atr(dayMoveAtrLen)[2] * dumpPumpMinAtrMult and close[1] > open[1]) or (close[2] > open[2] and (high[2]-low[2]) >= ta.atr(dayMoveAtrLen)[2] * dumpPumpMinAtrMult and close[1] < open[1]))])
+    [dOpen, dClose, yOpen, yClose, yRange, y2Range, yAtr, y2Atr, d2Bear, d2Bull, dTime] = request.security(sym, "D", f_reqD(dayMoveAtrLen))
     dumpYesterday = yClose < yOpen and yRange >= yAtr * dumpPumpMinAtrMult
     pumpYesterday = yClose > yOpen and yRange >= yAtr * dumpPumpMinAtrMult
     bias = dumpYesterday and dClose > dOpen ? 1 : pumpYesterday and dClose < dOpen ? -1 : 0
+    dFgd = dumpYesterday and dClose > dOpen
+    dFrd = pumpYesterday and dClose < dOpen
+    dump2 = d2Bear and y2Range >= y2Atr * dumpPumpMinAtrMult
+    pump2 = d2Bull and y2Range >= y2Atr * dumpPumpMinAtrMult
+    dTradeDay = (dump2 and yClose > yOpen) or (pump2 and yClose < yOpen)
     array.set(arrBias, i, bias)
     array.set(arrIsFgd, i, dFgd)
     array.set(arrIsFrd, i, dFrd)
@@ -731,7 +751,7 @@ if barstate.islast
     table.cell(dash, 0, 0, "SB Dashboard", bgcolor=color.new(color.black, 0), text_color=color.white)
     table.cell(dash, 1, 0, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades), bgcolor=color.new(color.black, 0), text_color=color.white)
     table.cell(dash, 2, 0, "Used Symbols: " + todaySym1 + " " + todaySym2, bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 3, 0, focusMode ? "Focus: " + str.format("{0,date,yyyy-MM-dd HH:mm}", focusAnchor) : "Focus: Live", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 3, 0, focusMode ? "Focus: " + str.tostring(focusY) + "-" + str.tostring(focusM) + "-" + str.tostring(focusD) + " 09:30" : "Focus: Live", bgcolor=color.new(color.black, 0), text_color=color.white)
     headers = array.from("Symbol", "Bias【SB必要】", "MRN", "NY", "Asia", "Sweep", "BOS", "FVG", "Retest", "Blue1", "Blue2", "Blue3", "ScoreA", "ScoreA+", "State")
     for c = 0 to 14
         table.cell(dash, c, 1, array.get(headers, c), bgcolor=color.new(color.silver, 20))

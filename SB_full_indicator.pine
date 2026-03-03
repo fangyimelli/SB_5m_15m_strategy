@@ -1,4 +1,5 @@
 //@version=5
+// NOTE: This script intentionally contains exactly ONE declaration statement: indicator().
 indicator("SB Full Manual Workflow (Indicator)", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=200)
 
 // =============================
@@ -251,7 +252,6 @@ for i = 0 to 3
     h15 = request.security(sym, "15", high)
     l15 = request.security(sym, "15", low)
     c15 = request.security(sym, "15", close)
-    o15 = request.security(sym, "15", open)
     atr15 = request.security(sym, "15", ta.atr(sweepAtrLen))
 
     ph15 = request.security(sym, "15", ta.pivothigh(high, bosSwingLeft, bosSwingRight))

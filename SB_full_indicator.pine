@@ -287,10 +287,10 @@ focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
 focusDayKey = f_dayKey(focusAnchor, timezoneInput)
 barDayKey = f_dayKey(time, timezoneInput)
 condFocusDay = barDayKey == focusDayKey
-[t5, inNy5Focus] = request.security(syminfo.tickerid, "5", [time, not na(time("5", nySession, timezoneInput))])
+[t5, inNy5] = request.security(syminfo.tickerid, "5", [time, not na(time("5", nySession, timezoneInput))])
 barDayKey5 = f_dayKey(t5, timezoneInput)
 condFocusDay5 = barDayKey5 == focusDayKey
-condFocusNY5 = condFocusDay5 and inNy5Focus
+condFocusNY5 = (barDayKey5 == focusDayKey) and inNy5
 sessMinutes = f_session_minutes(nySession)
 focusNYStart = focusAnchor
 focusNYEnd = focusNYStart + sessMinutes * 60000

@@ -3,6 +3,7 @@
 TradingView Pine Script indicator implementing SB workflow with portfolio/chart modes, focus mode, and staged Blue signals.
 
 ## Removed / Deprecated Log
+- 2026-03-03: Follow-up: focus snapshot NY-session condition now explicitly uses fixed 5m series `inNy5` with `condFocusNY5 = (barDayKey5 == focusDayKey) and inNy5` to avoid chart timeframe leakage.
 - 2026-03-03: Fix: focus mode snapshot session gating now uses fixed 5m series (`t5/inNy5`, `condFocusNY5`), HUD snapshot fields use `condFocusNY5`, TradeDay snapshot uses whole-day `condFocusDay5`, and HUD debug adds `lastNYBarTimeUsed` with `foundSnap=Y/N` based on `stSnap` only.
 - 2026-03-03: Fix: focus HUD uses valuewhen snapshot for selected day (`stSnap/tradeDaySnap/scoreASnap/scoreAPlusSnap/fvgMitSnap/bosDirSnap`), removes focus-day masking fallback, and shows `—` only when selected day snapshot is unavailable.
 - 2026-03-03: Fix: HUD focus snapshot bool fields now use `focusSnapshotOk` (from `ta.valuewhen(condFocusDay, time, 0)`) for `—` fallback; removed invalid `na()` checks on `series bool` values to fix Pine compile error.

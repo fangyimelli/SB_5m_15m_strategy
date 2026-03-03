@@ -2,6 +2,10 @@
 
 ## What changed (latest)
 
+- 2026-03-03 Follow-up focus condition consistency:
+  - Renamed focus 5m session flag to `inNy5` and set `condFocusNY5 = (barDayKey5 == focusDayKey) and inNy5` for direct parity with implementation spec.
+  - Keeps focus HUD snapshot source fixed at 5m and independent from chart timeframe.
+
 - 2026-03-03 Focus snapshot timeframe fix (focus_mode HUD all `—` regression):
   - Added fixed-5m focus snapshot series via `request.security(syminfo.tickerid, "5", [time, not na(time("5", nySession, timezoneInput))])`.
   - Added `barDayKey5`, `condFocusDay5`, `condFocusNY5` so focus session detection no longer depends on chart timeframe (`timeframe.period`).

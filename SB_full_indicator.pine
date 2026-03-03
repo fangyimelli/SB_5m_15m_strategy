@@ -1,0 +1,876 @@
+//@version=6
+// NOTE: This script intentionally contains exactly ONE declaration statement: indicator().
+indicator("SB Full Manual Workflow (Indicator)", overlay=true, max_labels_count=500, max_lines_count=500, max_boxes_count=200)
+
+chartTickerStd = ticker.standard(syminfo.tickerid)
+
+// =============================
+// 0) Inputs
+// =============================
+mode = input.string("Portfolio(4 symbols)", "Mode", options=["Portfolio(4 symbols)", "Chart(single)"])
+
+symbol1 = input.symbol("EURUSD", "Portfolio Symbol 1")
+symbol2 = input.symbol("GBPUSD", "Portfolio Symbol 2")
+symbol3 = input.symbol("USDJPY", "Portfolio Symbol 3")
+symbol4 = input.symbol("XAUUSD", "Portfolio Symbol 4")
+
+timezoneInput = input.string("America/New_York", "Timezone")
+nySession = input.session("0930-1130", "NY Session")
+asiaSession = input.session("2000-0000", "Asia Session")
+prefilterLock = input.bool(true, "Prefilter lock Asia range at NY open")
+allowEntryAfterSession = input.bool(false, "Allow entry after NY session")
+
+liveGradeMode = input.string("Manual", "Live grade mode", options=["Manual", "Auto"])
+manualGrade = input.string("A+", "Manual grade", options=["A+", "A"])
+autoDowngrade = input.bool(false, "Auto downgrade near session end")
+
+requireSbDayType = input.bool(true, "【SB必要】Require SB DayType bias")
+dayMoveAtrLen = input.int(14, "Day ATR len", minval=1)
+dumpPumpMinAtrMult = input.float(1.0, "Dump/Pump min ATR mult", step=0.1)
+
+mrnBlock = input.bool(false, "【SB必要】MRN block (manual red news lock)")
+
+sweepMinTicks = input.float(5.0, "Sweep min ticks/points", step=0.1)
+sweepAtrLen = input.int(14, "Sweep ATR len (15m)", minval=1)
+sweepMinAtrMult = input.float(0.10, "Sweep min ATR mult", step=0.01)
+sweepReclaimBars = input.int(1, "Sweep reclaim bars", minval=1, maxval=5)
+
+bosSwingLeft = input.int(2, "BOS pivot left", minval=1, maxval=10)
+bosSwingRight = input.int(2, "BOS pivot right", minval=1, maxval=10)
+bosConfirmBars = input.int(1, "BOS confirm bars", minval=1, maxval=5)
+bosMinAtrMultA = input.float(0.10, "BOS min ATR mult (A)", step=0.01)
+bosMinAtrMultAPlus = input.float(0.18, "BOS min ATR mult (A+)", step=0.01)
+
+useFvg = input.bool(true, "Use 15m FVG gate")
+fvgLookbackBars = input.int(20, "FVG lookback bars", minval=5, maxval=100)
+fvgExpireMinutes = input.int(60, "FVG expire minutes", minval=5)
+fvgMinAtrMultA = input.float(0.14, "FVG min ATR mult (A)", step=0.01)
+fvgMinAtrMultAPlus = input.float(0.25, "FVG min ATR mult (A+)", step=0.01)
+
+retestMode = input.string("BOS level", "Retest mode", options=["BOS level", "pre-break pivot zone", "band(BOS±buffer)"])
+retestBufferAtrMultA = input.float(0.07, "Retest buffer ATR mult (A)", step=0.01)
+retestBufferAtrMultAPlus = input.float(0.04, "Retest buffer ATR mult (A+)", step=0.01)
+entryExpireMinutes = input.int(60, "Entry expire minutes", minval=5)
+
+requireEma20ForBlue3 = input.bool(true, "【SB必要】Require 5m EMA20 entry candle for Blue3")
+
+useBlueLights = input.bool(true, "Use Blue Lights")
+reactionWindowBars = input.int(1, "Blue2 reaction window bars", minval=1, maxval=2)
+requireReclaimForBlue2 = input.bool(true, "Require reclaim for Blue2")
+enableRejectForBlue2 = input.bool(true, "Enable reject wick for Blue2")
+rejectWickRatioMin = input.float(0.50, "Reject wick ratio min", step=0.01)
+rejectBodyRatioMax = input.float(0.40, "Reject body ratio max", step=0.01)
+cooldownBlue3 = input.int(0, "Cooldown Blue3 (minutes, 0=off)", minval=0)
+cooldownBlue1 = input.int(10, "Cooldown Blue1 (minutes)", minval=0)
+cooldownBlue2 = input.int(10, "Cooldown Blue2 (minutes)", minval=0)
+consumeSlotOn = input.string("Blue3", "Consume slot on", options=["Blue3", "Blue1"])
+
+drawTargetLines = input.bool(true, "Draw Entry/TP/SL on Blue3")
+targetPips = input.int(50, "TP pips", minval=1)
+drawSlLine = input.bool(true, "Draw SL line")
+slMode = input.string("FixedPips", "SL mode", options=["FixedPips", "StructureSwing"])
+slPipsDefault = input.int(15, "SL default pips", minval=1)
+slPipsMaxHint = input.int(20, "SL max hint pips", minval=1)
+slBufferPips = input.int(2, "SL buffer pips", minval=0)
+pipSizeMode = input.string("Auto FX", "Pip size mode", options=["Auto FX", "Manual"])
+pipSizeManual = input.float(0.0001, "Manual pip size", step=0.0001)
+lineLifecycle = input.string("Next Blue3", "Target line lifecycle", options=["Next Blue3", "Session End", "Day End"])
+showTargetLabel = input.bool(true, "Show TP label")
+showSlLabel = input.bool(true, "Show SL label")
+drawOnChartSymbolOnly = input.bool(true, "Draw on chart symbol only")
+showChartLabels = input.string("Signals only", "Chart labels", options=["Signals only", "Off"])
+showBlockedLabels = input.bool(false, "Show blocked labels on chart (default off)")
+maxSignalLabels = input.int(30, "Max signal labels", minval=1, maxval=200)
+allowDrawAllSymbols = input.bool(false, "Portfolio: draw all symbols")
+
+scoreEnabled = input.bool(true, "Score enabled")
+scoreThresholdA = input.int(75, "A threshold", minval=0, maxval=100)
+scoreThresholdAPlus = input.int(80, "A+ threshold", minval=0, maxval=100)
+scoreWNy = input.int(20, "Score weight NY", minval=0, maxval=100)
+scoreWSweep = input.int(25, "Score weight Sweep", minval=0, maxval=100)
+scoreWBos = input.int(25, "Score weight BOS", minval=0, maxval=100)
+scoreWFvg = input.int(20, "Score weight FVG", minval=0, maxval=100)
+scoreWEntry = input.int(10, "Score weight Retest/Blue", minval=0, maxval=100)
+
+dailyMaxTrades = input.int(2, "Portfolio daily max trades", minval=1, maxval=5)
+uniqueSymbolsOnly = input.bool(true, "Portfolio unique symbols only")
+tieBreaker = input.string("order_1_2_3_4", "Tie breaker", options=["order_1_2_3_4", "bestScore"])
+
+trainingMode = input.bool(false, "Training mode")
+tradeDayOnly = input.bool(true, "Trade Day only (enable full flow only on Trade Day)")
+
+focusMode = input.bool(false, "Focus mode (lock to one NY date)")
+focusDateNy0930 = input.time(1735828200000, "Focus date NY 09:30")
+focusWindow = input.string("SessionOnly", "Focus window", options=["SessionOnly", "FullDay"])
+allowAlertsInFocus = input.bool(false, "Allow alerts in focus mode")
+
+requireGreatDaytype = input.bool(true, "Require Great FRD/FGD rectangle")
+rectTf = input.string("15", "Rectangle TF (fixed)", options=["15"])
+rectAtrLen = input.int(14, "Rectangle ATR len", minval=1)
+rectLookbackBars = input.int(12, "Rectangle lookback bars", minval=3, maxval=48)
+rectMaxAtrMult = input.float(1.0, "Rectangle max ATR mult", step=0.1)
+rectBodyRatioMax = input.float(0.45, "Rectangle body ratio max", step=0.01)
+touchAtrMult = input.float(0.10, "Rectangle touch ATR mult", step=0.01)
+minTouchesEachSide = input.int(2, "Min touches each side", minval=1, maxval=10)
+drawRectangleBox = input.bool(true, "Draw Day2 rectangle box")
+minScoreToDisplay = input.int(70, "Min score to display", minval=0, maxval=100)
+
+// =============================
+// Constants / enums
+// =============================
+STATE_IDLE = 0
+STATE_ASIA_READY = 1
+STATE_SWEPT = 2
+STATE_BOS_CONFIRMED = 3
+STATE_WAIT_FVG = 4
+STATE_WAIT_FVG_MIT = 5
+STATE_WAIT_RETEST = 6
+STATE_BLUE1 = 7
+STATE_BLUE2 = 8
+STATE_BLUE3 = 9
+STATE_DONE = 10
+
+// =============================
+// Helpers
+// =============================
+f_dayKey(_t, _tz) => year(_t, _tz) * 10000 + month(_t, _tz) * 100 + dayofmonth(_t, _tz)
+
+f_pipSize(_sym) =>
+    bool isFx = str.contains(str.upper(_sym), "FX") or str.contains(str.upper(_sym), "USD")
+    bool isJpy = str.contains(str.upper(_sym), "JPY")
+    pipSizeMode == "Manual" ? pipSizeManual : (isFx ? (isJpy ? 0.01 : 0.0001) : pipSizeManual)
+
+f_stateName(_s) =>
+    _s == STATE_IDLE ? "IDLE" :
+      _s == STATE_ASIA_READY ? "ASIA_READY" :
+      _s == STATE_SWEPT ? "SWEPT" :
+      _s == STATE_BOS_CONFIRMED ? "BOS" :
+      _s == STATE_WAIT_FVG ? "WAIT_FVG" :
+      _s == STATE_WAIT_FVG_MIT ? "WAIT_MIT" :
+      _s == STATE_WAIT_RETEST ? "WAIT_RETEST" :
+      _s == STATE_BLUE1 ? "BLUE1" :
+      _s == STATE_BLUE2 ? "BLUE2" :
+      _s == STATE_BLUE3 ? "BLUE3" : "DONE"
+
+f_wickReject(_dir, _o, _h, _l, _c) =>
+    rng = math.max(_h - _l, syminfo.mintick)
+    body = math.abs(_c - _o) / rng
+    upper = (_h - math.max(_o, _c)) / rng
+    lower = (math.min(_o, _c) - _l) / rng
+    _dir == 1 ? (lower >= rejectWickRatioMin and body <= rejectBodyRatioMax) : (upper >= rejectWickRatioMin and body <= rejectBodyRatioMax)
+
+f_score(_inNy, _sweep, _bos, _fvg, _entry) =>
+    raw = (_inNy ? scoreWNy : 0) + (_sweep ? scoreWSweep : 0) + (_bos ? scoreWBos : 0) + (_fvg ? scoreWFvg : 0) + (_entry ? scoreWEntry : 0)
+    math.min(100, raw)
+
+
+f_inCooldown(_lastTs, _minutes) =>
+    _minutes > 0 and not na(_lastTs) and (time - _lastTs) < _minutes * 60000
+
+f_hhmm(_s, _start) =>
+    hh = str.tonumber(str.substring(_s, _start, _start + 2))
+    mm = str.tonumber(str.substring(_s, _start + 2, _start + 4))
+    [hh, mm]
+
+f_session_minutes(_sess) =>
+    s = str.replace_all(_sess, ":", "")
+    [sh, sm] = f_hhmm(s, 0)
+    [eh, em] = f_hhmm(s, 5)
+    startMin = sh * 60 + sm
+    endMin = eh * 60 + em
+    dur = endMin - startMin
+    dur <= 0 ? dur + 24 * 60 : dur
+
+
+f_req5(_nySession, _asiaSession, _tz) =>
+    ema = ta.ema(close, 20)
+    [not na(time("5", _nySession, _tz)), not na(time("5", _nySession, _tz))[1], not na(time("5", _asiaSession, _tz)), high, low, open, close, ema]
+
+f_req15(_sweepAtrLen, _bosL, _bosR, _rectLookback, _rectMaxAtrMult, _rectBodyRatioMax, _touchAtrMult, _minTouches, _tz) =>
+    atr = ta.atr(_sweepAtrLen)
+    ph = ta.pivothigh(high, _bosL, _bosR)
+    pl = ta.pivotlow(low, _bosL, _bosR)
+    hh = ta.highest(high, _rectLookback)
+    ll = ta.lowest(low, _rectLookback)
+    rng = hh - ll
+    bodyRatio = ta.sma(math.abs(close - open) / math.max(high - low, syminfo.mintick), _rectLookback)
+    touchBuf = atr * _touchAtrMult
+    topTouches = ta.sum(high >= hh - touchBuf ? 1.0 : 0.0, _rectLookback)
+    botTouches = ta.sum(low <= ll + touchBuf ? 1.0 : 0.0, _rectLookback)
+    rectOk = (rng <= atr * _rectMaxAtrMult) and (bodyRatio <= _rectBodyRatioMax) and (topTouches >= _minTouches and botTouches >= _minTouches)
+    dKey15 = year(time, _tz) * 10000 + month(time, _tz) * 100 + dayofmonth(time, _tz)
+    [high, low, close, atr, ph, pl, low > high[2], high < low[2], low, high[2], low[2], high, hh, ll, rectOk, dKey15]
+
+f_reqD(_dayAtrLen) =>
+    atr = ta.atr(_dayAtrLen)
+    [open, close, open[1], close[1], high[1] - low[1], high[2] - low[2], atr[1], atr[2], close[2] < open[2], close[2] > open[2], time]
+
+// =============================
+// Per-symbol state arrays (0..3)
+// =============================
+var arrSyms = array.new_string(4, "")
+if barstate.isfirst
+    array.set(arrSyms, 0, symbol1)
+    array.set(arrSyms, 1, symbol2)
+    array.set(arrSyms, 2, symbol3)
+    array.set(arrSyms, 3, symbol4)
+array.set(arrSyms, 0, symbol1)
+array.set(arrSyms, 1, symbol2)
+array.set(arrSyms, 2, symbol3)
+array.set(arrSyms, 3, symbol4)
+
+var arrState = array.new_int(4, STATE_IDLE)
+var arrAsiaH = array.new_float(4, na)
+var arrAsiaL = array.new_float(4, na)
+var arrSweepDir = array.new_int(4, 0)
+var arrSweepTime = array.new_int(4, na)
+var arrBosDir = array.new_int(4, 0)
+var arrBosLevel = array.new_float(4, na)
+var arrBosTime = array.new_int(4, na)
+var arrFvgU = array.new_float(4, na)
+var arrFvgL = array.new_float(4, na)
+var arrFvgM = array.new_float(4, na)
+var arrFvgTime = array.new_int(4, na)
+var arrFvgMit = array.new_bool(4, false)
+var arrRetU = array.new_float(4, na)
+var arrRetL = array.new_float(4, na)
+var arrBlue1T = array.new_int(4, na)
+var arrBlue2T = array.new_int(4, na)
+var arrBlue3T = array.new_int(4, na)
+var arrEntry = array.new_float(4, na)
+var arrTp = array.new_float(4, na)
+var arrSl = array.new_float(4, na)
+var arrLastAlertB1 = array.new_int(4, na)
+var arrLastAlertB2 = array.new_int(4, na)
+var arrLastAlertB3 = array.new_int(4, na)
+var arrDoneToday = array.new_bool(4, false)
+var arrLastDay = array.new_int(4, na)
+var arrSweepUsed = array.new_bool(4, false)
+var arrSwingHigh = array.new_float(4, na)
+var arrSwingLow = array.new_float(4, na)
+
+var arrScoreA = array.new_float(4, 0)
+var arrScoreAPlus = array.new_float(4, 0)
+var arrBias = array.new_int(4, 0)
+var arrInNy = array.new_bool(4, false)
+var arrBlue1Now = array.new_bool(4, false)
+var arrBlue2Now = array.new_bool(4, false)
+var arrBlue3Now = array.new_bool(4, false)
+var arrBlocked = array.new_string(4, "")
+var arrIsFgd = array.new_bool(4, false)
+var arrIsFrd = array.new_bool(4, false)
+var arrIsTradeDay = array.new_bool(4, false)
+var arrScannerFgdPulse = array.new_bool(4, false)
+var arrScannerFrdPulse = array.new_bool(4, false)
+var arrScannerTradePulse = array.new_bool(4, false)
+var arrLastDBarTime = array.new_int(4, na)
+var arrRectToday = array.new_bool(4, false)
+var arrRectPrev = array.new_bool(4, false)
+var arrRectDayKey = array.new_int(4, na)
+var arrRectHH = array.new_float(4, na)
+var arrRectLL = array.new_float(4, na)
+var arrGreatReason = array.new_string(4, "")
+var arrDisplayOk = array.new_bool(4, true)
+
+// Training counters
+var arrSweepCount = array.new_int(4, 0)
+var arrBosCount = array.new_int(4, 0)
+var arrFvgCount = array.new_int(4, 0)
+var arrMitCount = array.new_int(4, 0)
+var arrB1Count = array.new_int(4, 0)
+var arrB2Count = array.new_int(4, 0)
+var arrB3Count = array.new_int(4, 0)
+
+// Portfolio slots
+var int todayTradeCount = 0
+var string todaySym1 = ""
+var string todaySym2 = ""
+var int portfolioDayKey = na
+
+dayNow = f_dayKey(time, timezoneInput)
+if na(portfolioDayKey) or dayNow != portfolioDayKey
+    portfolioDayKey := dayNow
+    todayTradeCount := 0
+    todaySym1 := ""
+    todaySym2 := ""
+    for i = 0 to 3
+        array.set(arrDoneToday, i, false)
+
+activeGrade = liveGradeMode == "Manual" ? manualGrade : (autoDowngrade ? "A" : manualGrade)
+isAPlus = activeGrade == "A+"
+
+focusY = year(focusDateNy0930, timezoneInput)
+focusM = month(focusDateNy0930, timezoneInput)
+focusD = dayofmonth(focusDateNy0930, timezoneInput)
+focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
+focusDayStart = timestamp(timezoneInput, focusY, focusM, focusD, 0, 0)
+focusDayEnd = focusDayStart + 24 * 60 * 60000
+sessMinutes = f_session_minutes(nySession)
+focusNYStart = focusAnchor
+focusNYEnd = focusNYStart + sessMinutes * 60000
+focusAsiaStart = focusDayStart - 4 * 60 * 60000
+focusAsiaEnd = focusDayStart
+inFocusCalcWindow = focusMode ? (time >= focusAsiaStart and time <= (focusWindow == "FullDay" ? focusDayEnd : focusNYEnd)) : true
+inFocusDisplayWindow = focusMode ? (time >= (focusWindow == "FullDay" ? focusDayStart : focusNYStart) and time <= (focusWindow == "FullDay" ? focusDayEnd : focusNYEnd)) : true
+
+// =============================
+// Core per-symbol engine
+// =============================
+for i = 0 to 3
+    sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, i))
+
+    [inNy5, inNy5Prev, inAsia5, h5, l5, o5, c5, ema5] = request.security(sym, "5", f_req5(nySession, asiaSession, timezoneInput))
+    nyStart5 = inNy5 and not inNy5Prev
+
+    [h15, l15, c15, atr15, ph15, pl15, bullFvg, bearFvg, bullFvgUpper, bullFvgLower, bearFvgUpper, bearFvgLower, rectHH, rectLL, rectOk15, dKey15] = request.security(sym, "15", f_req15(sweepAtrLen, bosSwingLeft, bosSwingRight, rectLookbackBars, rectMaxAtrMult, rectBodyRatioMax, touchAtrMult, minTouchesEachSide, timezoneInput))
+    if not na(ph15)
+        array.set(arrSwingHigh, i, ph15)
+    if not na(pl15)
+        array.set(arrSwingLow, i, pl15)
+
+    prevRectDay = array.get(arrRectDayKey, i)
+    if na(prevRectDay)
+        array.set(arrRectDayKey, i, dKey15)
+        array.set(arrRectToday, i, rectOk15)
+    else if dKey15 != prevRectDay
+        array.set(arrRectPrev, i, array.get(arrRectToday, i))
+        array.set(arrRectToday, i, rectOk15)
+        array.set(arrRectDayKey, i, dKey15)
+    else
+        array.set(arrRectToday, i, rectOk15)
+    array.set(arrRectHH, i, rectHH)
+    array.set(arrRectLL, i, rectLL)
+
+    currentDay = f_dayKey(time, timezoneInput)
+    lastDay = array.get(arrLastDay, i)
+    if (not focusMode) and (na(lastDay) or currentDay != lastDay)
+        array.set(arrLastDay, i, currentDay)
+        array.set(arrState, i, STATE_IDLE)
+        array.set(arrAsiaH, i, na)
+        array.set(arrAsiaL, i, na)
+        array.set(arrSweepDir, i, 0)
+        array.set(arrSweepTime, i, na)
+        array.set(arrBosDir, i, 0)
+        array.set(arrBosLevel, i, na)
+        array.set(arrBosTime, i, na)
+        array.set(arrFvgU, i, na)
+        array.set(arrFvgL, i, na)
+        array.set(arrFvgM, i, na)
+        array.set(arrFvgTime, i, na)
+        array.set(arrFvgMit, i, false)
+        array.set(arrRetU, i, na)
+        array.set(arrRetL, i, na)
+        array.set(arrBlue1T, i, na)
+        array.set(arrBlue2T, i, na)
+        array.set(arrBlue3T, i, na)
+        array.set(arrSweepUsed, i, false)
+
+    state = array.get(arrState, i)
+    asiaH = array.get(arrAsiaH, i)
+    asiaL = array.get(arrAsiaL, i)
+    bosDir = array.get(arrBosDir, i)
+    bosLevel = array.get(arrBosLevel, i)
+    bosTime = array.get(arrBosTime, i)
+    fvgU = array.get(arrFvgU, i)
+    fvgL = array.get(arrFvgL, i)
+    fvgM = array.get(arrFvgM, i)
+
+    // Reset edge flags per bar
+    array.set(arrBlue1Now, i, false)
+    array.set(arrBlue2Now, i, false)
+    array.set(arrBlue3Now, i, false)
+
+    // 【加分】Asia range build
+    if inFocusCalcWindow and inAsia5 and (not prefilterLock or not inNy5)
+        asiaH := na(asiaH) ? h5 : math.max(asiaH, h5)
+        asiaL := na(asiaL) ? l5 : math.min(asiaL, l5)
+        array.set(arrAsiaH, i, asiaH)
+        array.set(arrAsiaL, i, asiaL)
+    if inFocusCalcWindow and not inAsia5 and not na(asiaH) and not na(asiaL) and state == STATE_IDLE
+        state := STATE_ASIA_READY
+    if inFocusCalcWindow and prefilterLock and nyStart5 and state < STATE_SWEPT and not na(asiaH) and not na(asiaL)
+        state := STATE_ASIA_READY
+
+    // Gates
+    [dOpen, dClose, yOpen, yClose, yRange, y2Range, yAtr, y2Atr, d2Bear, d2Bull, dTime] = request.security(sym, "D", f_reqD(dayMoveAtrLen))
+    dumpYesterday = yClose < yOpen and yRange >= yAtr * dumpPumpMinAtrMult
+    pumpYesterday = yClose > yOpen and yRange >= yAtr * dumpPumpMinAtrMult
+    bias = dumpYesterday and dClose > dOpen ? 1 : pumpYesterday and dClose < dOpen ? -1 : 0
+    rectToday = array.get(arrRectToday, i)
+    rectPrev = array.get(arrRectPrev, i)
+    dFgdBase = dumpYesterday and dClose > dOpen
+    dFrdBase = pumpYesterday and dClose < dOpen
+    dFgd = dFgdBase and (not requireGreatDaytype or rectToday)
+    dFrd = dFrdBase and (not requireGreatDaytype or rectToday)
+    dump2 = d2Bear and y2Range >= y2Atr * dumpPumpMinAtrMult
+    pump2 = d2Bull and y2Range >= y2Atr * dumpPumpMinAtrMult
+    prevFgdBase = dump2 and yClose > yOpen
+    prevFrdBase = pump2 and yClose < yOpen
+    prevGreat = (prevFgdBase or prevFrdBase) and (not requireGreatDaytype or rectPrev)
+    dTradeDay = prevGreat
+    greatReason = requireGreatDaytype and not rectToday ? "Day2 not great rectangle" : ""
+    array.set(arrGreatReason, i, greatReason)
+    array.set(arrBias, i, bias)
+    array.set(arrIsFgd, i, dFgd)
+    array.set(arrIsFrd, i, dFrd)
+    array.set(arrIsTradeDay, i, dTradeDay)
+    lastDTime = array.get(arrLastDBarTime, i)
+    newDBar = na(lastDTime) or dTime != lastDTime
+    array.set(arrLastDBarTime, i, dTime)
+    array.set(arrScannerFgdPulse, i, newDBar and dFgd)
+    array.set(arrScannerFrdPulse, i, newDBar and dFrd)
+    array.set(arrScannerTradePulse, i, newDBar and dTradeDay)
+    biasOk = not requireSbDayType or ((bias == 1 and bosDir >= 0) or (bias == -1 and bosDir <= 0) or bosDir == 0)
+
+    inNyGate = allowEntryAfterSession ? (inNy5 or state >= STATE_BLUE1) : inNy5
+    sameBlocked = uniqueSymbolsOnly and ((todaySym1 == sym and todaySym1 != "") or (todaySym2 == sym and todaySym2 != ""))
+    slotAvailable = todayTradeCount < dailyMaxTrades and not sameBlocked
+
+    blockedReason = ""
+    if mrnBlock
+        blockedReason := "MRN blocked"
+    else if requireSbDayType and bias == 0
+        blockedReason := "SB bias NONE"
+    else if requireGreatDaytype and array.get(arrGreatReason, i) != ""
+        blockedReason := array.get(arrGreatReason, i)
+    else if not inNyGate
+        blockedReason := "Out of NY session"
+    else if not slotAvailable
+        blockedReason := sameBlocked ? "SameSymbolBlocked" : "Daily limit reached"
+    isTradeDay = array.get(arrIsTradeDay, i)
+    flowEnabled = not tradeDayOnly or isTradeDay
+    if not flowEnabled
+        state := STATE_IDLE
+        blockedReason := ""
+        array.set(arrBlocked, i, "")
+
+    // 【加分】Sweep
+    sweepThreshold = math.max(sweepMinTicks * syminfo.mintick, atr15 * sweepMinAtrMult)
+    upSweep = false
+    downSweep = false
+    if flowEnabled and state >= STATE_ASIA_READY and not array.get(arrSweepUsed, i) and not na(asiaH) and not na(asiaL)
+        upRaw = h15 > (asiaH + sweepThreshold)
+        dnRaw = l15 < (asiaL - sweepThreshold)
+        reclaimAUp = l15 <= asiaH
+        reclaimADn = h15 >= asiaL
+        reclaimAplusUp = c15 <= asiaH
+        reclaimAplusDn = c15 >= asiaL
+        recUp = isAPlus ? reclaimAplusUp : reclaimAUp
+        recDn = isAPlus ? reclaimAplusDn : reclaimADn
+        upSweep := upRaw and recUp
+        downSweep := dnRaw and recDn
+
+    if flowEnabled and (upSweep or downSweep) and state >= STATE_ASIA_READY
+        array.set(arrSweepDir, i, upSweep ? 1 : -1)
+        array.set(arrSweepTime, i, time)
+        array.set(arrSweepUsed, i, true)
+        state := STATE_SWEPT
+        array.set(arrSweepCount, i, array.get(arrSweepCount, i) + 1)
+
+    sweepDir = array.get(arrSweepDir, i)
+
+    // 【加分】15m BOS (opposite to sweep)
+    swingLow = array.get(arrSwingLow, i)
+    swingHigh = array.get(arrSwingHigh, i)
+    minBos = (isAPlus ? bosMinAtrMultAPlus : bosMinAtrMultA) * atr15
+    bosUp = sweepDir == -1 and not na(swingHigh) and ((isAPlus ? c15 > swingHigh : h15 > swingHigh) and math.abs(c15 - swingHigh) >= minBos)
+    bosDn = sweepDir == 1 and not na(swingLow) and ((isAPlus ? c15 < swingLow : l15 < swingLow) and math.abs(c15 - swingLow) >= minBos)
+    if flowEnabled and state == STATE_SWEPT and (bosUp or bosDn)
+        bosDir := bosUp ? 1 : -1
+        bosLevel := bosUp ? swingHigh : swingLow
+        bosTime := time
+        array.set(arrBosDir, i, bosDir)
+        array.set(arrBosLevel, i, bosLevel)
+        array.set(arrBosTime, i, bosTime)
+        state := useFvg ? STATE_WAIT_FVG : STATE_WAIT_RETEST
+        array.set(arrBosCount, i, array.get(arrBosCount, i) + 1)
+
+    // Gate enforce direction after BOS available
+    biasDirOk = not requireSbDayType or (bias == 0 ? false : bias == bosDir)
+
+    // 【加分】FVG + mitigation
+    fvgMin = atr15 * (isAPlus ? fvgMinAtrMultAPlus : fvgMinAtrMultA)
+    fvgFound = false
+    if flowEnabled and useFvg and state == STATE_WAIT_FVG and not na(bosTime)
+        withinFvgWindow = time <= bosTime + fvgExpireMinutes * 60000
+        if withinFvgWindow
+            if bosDir == 1 and bullFvg and (bullFvgUpper - bullFvgLower) >= fvgMin
+                fvgU := bullFvgUpper
+                fvgL := bullFvgLower
+                fvgM := (fvgU + fvgL) * 0.5
+                fvgFound := true
+            if bosDir == -1 and bearFvg and (bearFvgUpper - bearFvgLower) >= fvgMin
+                fvgU := bearFvgUpper
+                fvgL := bearFvgLower
+                fvgM := (fvgU + fvgL) * 0.5
+                fvgFound := true
+        if fvgFound
+            array.set(arrFvgU, i, fvgU)
+            array.set(arrFvgL, i, fvgL)
+            array.set(arrFvgM, i, fvgM)
+            array.set(arrFvgTime, i, time)
+            state := STATE_WAIT_FVG_MIT
+            array.set(arrFvgCount, i, array.get(arrFvgCount, i) + 1)
+
+    if flowEnabled and useFvg and state == STATE_WAIT_FVG_MIT
+        mit = false
+        if bosDir == 1
+            mit := isAPlus ? l5 <= fvgM : l5 <= fvgU
+        if bosDir == -1
+            mit := isAPlus ? h5 >= fvgM : h5 >= fvgL
+        if mit
+            array.set(arrFvgMit, i, true)
+            state := STATE_WAIT_RETEST
+            array.set(arrMitCount, i, array.get(arrMitCount, i) + 1)
+
+    // 【加分】Retest zone
+    retAtr = atr15 * (isAPlus ? retestBufferAtrMultAPlus : retestBufferAtrMultA)
+    retU = bosLevel + retAtr
+    retL = bosLevel - retAtr
+    if retestMode == "pre-break pivot zone"
+        retU := bosDir == 1 ? (bosLevel + retAtr) : (not na(swingHigh) ? swingHigh : bosLevel + retAtr)
+        retL := bosDir == 1 ? (not na(swingLow) ? swingLow : bosLevel - retAtr) : (bosLevel - retAtr)
+    if retestMode == "BOS level"
+        retU := bosLevel
+        retL := bosLevel
+    array.set(arrRetU, i, retU)
+    array.set(arrRetL, i, retL)
+
+    inEntryWindow = na(bosTime) ? false : (time <= bosTime + entryExpireMinutes * 60000)
+    retestHit = flowEnabled and state == STATE_WAIT_RETEST and inEntryWindow and ((bosDir == 1 and l5 <= retU and l5 >= retL - retAtr * 2) or (bosDir == -1 and h5 >= retL and h5 <= retU + retAtr * 2))
+
+    // Blue1
+    canSignal = flowEnabled and blockedReason == "" and biasDirOk and (consumeSlotOn != "Blue1" or slotAvailable)
+    if useBlueLights and retestHit and canSignal
+        state := STATE_BLUE1
+        array.set(arrBlue1T, i, time)
+        array.set(arrBlue1Now, i, true)
+        array.set(arrB1Count, i, array.get(arrB1Count, i) + 1)
+        if consumeSlotOn == "Blue1" and mode == "Portfolio(4 symbols)"
+            if todayTradeCount < dailyMaxTrades
+                todayTradeCount += 1
+                if todaySym1 == ""
+                    todaySym1 := sym
+                else if todaySym2 == ""
+                    todaySym2 := sym
+
+    // Blue2
+    b1t = array.get(arrBlue1T, i)
+    reactionValid = false
+    if state == STATE_BLUE1 and not na(b1t)
+        withinReaction = time <= b1t + reactionWindowBars * 5 * 60000
+        reclaim = bosDir == 1 ? c5 >= retU : c5 <= retL
+        rejectOk = f_wickReject(bosDir, o5, h5, l5, c5)
+        reactionValid := withinReaction and (not requireReclaimForBlue2 or reclaim) and (not enableRejectForBlue2 or rejectOk)
+    if reactionValid and canSignal
+        state := STATE_BLUE2
+        array.set(arrBlue2T, i, time)
+        array.set(arrBlue2Now, i, true)
+        array.set(arrB2Count, i, array.get(arrB2Count, i) + 1)
+
+    // Blue3
+    emaOk = bosDir == 1 ? c5 >= ema5 : c5 <= ema5
+    strictDirOk = isAPlus ? (bosDir == 1 ? c5 > o5 : c5 < o5) : true
+    b2t = array.get(arrBlue2T, i)
+    canBlue3 = state == STATE_BLUE2 and not na(b2t) and blockedReason == "" and biasDirOk and slotAvailable
+    if canBlue3 and (not requireEma20ForBlue3 or (emaOk and strictDirOk))
+        state := STATE_BLUE3
+        array.set(arrBlue3T, i, time)
+        array.set(arrBlue3Now, i, true)
+        array.set(arrDoneToday, i, true)
+        array.set(arrB3Count, i, array.get(arrB3Count, i) + 1)
+
+    // Portfolio slot consume on Blue3 with tie break handled later; mark state only now
+    array.set(arrState, i, state)
+    array.set(arrInNy, i, inNy5)
+
+    // Scoring
+    hasSweep = state >= STATE_SWEPT
+    hasBos = state >= STATE_BOS_CONFIRMED or not na(bosTime)
+    hasFvgMit = useFvg ? array.get(arrFvgMit, i) : false
+    hasEntryPath = state >= STATE_BLUE2
+    scoreA = scoreEnabled and flowEnabled ? f_score(inNy5, hasSweep, hasBos, useFvg ? hasFvgMit : false, hasEntryPath) : 0
+    scoreAplus = scoreEnabled and flowEnabled ? f_score(inNy5, hasSweep, hasBos, useFvg ? hasFvgMit : false, state >= STATE_BLUE3) : 0
+    array.set(arrScoreA, i, scoreA)
+    array.set(arrScoreAPlus, i, scoreAplus)
+    displayOk = math.max(scoreA, scoreAplus) >= minScoreToDisplay
+    array.set(arrDisplayOk, i, displayOk)
+
+// Tie-breaker & slot consume when Blue3
+if mode == "Portfolio(4 symbols)"
+    winner = -1
+    if tieBreaker == "order_1_2_3_4"
+        for i = 0 to 3
+            if winner == -1 and array.get(arrBlue3Now, i)
+                winner := i
+    else
+        best = -1.0
+        for i = 0 to 3
+            if array.get(arrBlue3Now, i)
+                sc = isAPlus ? array.get(arrScoreAPlus, i) : array.get(arrScoreA, i)
+                if sc > best
+                    best := sc
+                    winner := i
+    for i = 0 to 3
+        if array.get(arrBlue3Now, i)
+            sym = array.get(arrSyms, i)
+            allow = (i == winner) and todayTradeCount < dailyMaxTrades and (not uniqueSymbolsOnly or (todaySym1 != sym and todaySym2 != sym))
+            if allow
+                todayTradeCount += 1
+                if todaySym1 == ""
+                    todaySym1 := sym
+                else if todaySym2 == ""
+                    todaySym2 := sym
+            else
+                array.set(arrBlue3Now, i, false)
+                array.set(arrState, i, STATE_BLUE2)
+                array.set(arrBlocked, i, "Slot blocked by tie-break/daily limit")
+
+// =============================
+// Alerts + Drawing (chart symbol focus)
+// =============================
+chartIdx = mode == "Chart(single)" ? 0 : (chartTickerStd == ticker.standard(symbol1) ? 0 : chartTickerStd == ticker.standard(symbol2) ? 1 : chartTickerStd == ticker.standard(symbol3) ? 2 : chartTickerStd == ticker.standard(symbol4) ? 3 : 0)
+
+b1NowChartRaw = array.get(arrBlue1Now, chartIdx)
+b2NowChartRaw = array.get(arrBlue2Now, chartIdx)
+b3NowChartRaw = array.get(arrBlue3Now, chartIdx)
+chartDir = array.get(arrBosDir, chartIdx)
+chartBos = array.get(arrBosLevel, chartIdx)
+chartSym = mode == "Chart(single)" ? chartTickerStd : array.get(arrSyms, chartIdx)
+chartScore = isAPlus ? array.get(arrScoreAPlus, chartIdx) : array.get(arrScoreA, chartIdx)
+shouldDraw = (not drawOnChartSymbolOnly or chartTickerStd == ticker.standard(chartSym)) and inFocusDisplayWindow and array.get(arrDisplayOk, chartIdx)
+b1NowChart = shouldDraw and b1NowChartRaw
+b2NowChart = shouldDraw and b2NowChartRaw
+b3NowChart = shouldDraw and b3NowChartRaw
+
+var line entryLine = na
+var line tpLine = na
+var line slLine = na
+var line bosLine = na
+var box fvgBox = na
+var box rectBox = na
+var label tpLbl = na
+var label slLbl = na
+var label blockedLbl = na
+var label[] signalLabels = array.new_label()
+var int lastDrawnBosTime = na
+var int lastDrawnFvgTime = na
+var int dedupeBar = na
+var bool firedB1Bar = false
+var bool firedB2Bar = false
+var bool firedB3Bar = false
+
+b1AlertCond = b1NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
+b2AlertCond = b2NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
+b3AlertCond = b3NowChart and array.get(arrDisplayOk, chartIdx) and (not focusMode or allowAlertsInFocus)
+alertcondition(b1AlertCond, "BLUE1 Retest Hit", "BLUE1 Retest Hit")
+alertcondition(b2AlertCond, "BLUE2 Reaction Confirmed", "BLUE2 Reaction Confirmed")
+alertcondition(b3AlertCond, "BLUE3 Manual Entry NOW", "BLUE3 ENTRY NOW")
+alertcondition(todayTradeCount >= dailyMaxTrades, "Daily limit reached", "Daily trade limit reached")
+
+if na(dedupeBar) or bar_index != dedupeBar
+    dedupeBar := bar_index
+    firedB1Bar := false
+    firedB2Bar := false
+    firedB3Bar := false
+
+showSignalsOnly = showChartLabels == "Signals only"
+showBlue12Labels = showSignalsOnly
+showBlue3Label = true
+
+if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focusMode or allowAlertsInFocus)
+    firedB1Bar := true
+    array.set(arrLastAlertB1, chartIdx, time)
+    alert("BLUE1 Retest Hit | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
+    if showBlue12Labels
+        lb = label.new(bar_index, low, "Blue1", style=label.style_label_up, color=color.new(color.blue, 0), textcolor=color.white, size=size.tiny)
+        array.push(signalLabels, lb)
+if b2NowChart and not firedB2Bar and not f_inCooldown(array.get(arrLastAlertB2, chartIdx), cooldownBlue2) and (not focusMode or allowAlertsInFocus)
+    firedB2Bar := true
+    array.set(arrLastAlertB2, chartIdx, time)
+    alert("BLUE2 Reaction Confirmed | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore), alert.freq_once_per_bar_close)
+    if showBlue12Labels
+        lb = label.new(bar_index, low, "Blue2", style=label.style_label_up, color=color.new(color.blue, 30), textcolor=color.white, size=size.tiny)
+        array.push(signalLabels, lb)
+
+if b3NowChart and not firedB3Bar and not f_inCooldown(array.get(arrLastAlertB3, chartIdx), cooldownBlue3) and (not focusMode or allowAlertsInFocus)
+    firedB3Bar := true
+    array.set(arrLastAlertB3, chartIdx, time)
+    p = f_pipSize(chartSym)
+    entry = close
+    tp = entry + chartDir * targetPips * p
+    sl = slMode == "FixedPips" ? (entry - chartDir * slPipsDefault * p) : (chartDir == 1 ? nz(array.get(arrSwingLow, chartIdx), entry - slPipsDefault * p) - slBufferPips * p : nz(array.get(arrSwingHigh, chartIdx), entry + slPipsDefault * p) + slBufferPips * p)
+    array.set(arrEntry, chartIdx, entry)
+    array.set(arrTp, chartIdx, tp)
+    array.set(arrSl, chartIdx, sl)
+    if drawTargetLines
+        if not na(entryLine)
+            line.delete(entryLine)
+        if not na(tpLine)
+            line.delete(tpLine)
+        if not na(slLine)
+            line.delete(slLine)
+        if not na(tpLbl)
+            label.delete(tpLbl)
+        if not na(slLbl)
+            label.delete(slLbl)
+        entryLine := line.new(bar_index, entry, bar_index + 50, entry, color=color.new(color.blue, 40), width=2)
+        tpLine := line.new(bar_index, tp, bar_index + 50, tp, color=color.new(color.green, 0), width=2)
+        slLine := line.new(bar_index, sl, bar_index + 50, sl, color=color.new(color.red, 0), width=2)
+        if showTargetLabel and not showSignalsOnly
+            tpLbl := label.new(bar_index, tp, "TP +" + str.tostring(targetPips) + "p", style=label.style_label_right, color=color.new(color.green, 0), textcolor=color.white)
+        if showSlLabel and not showSignalsOnly
+            slLbl := label.new(bar_index, sl, "SL (SB ~" + str.tostring(slPipsDefault) + "p, hint<=" + str.tostring(slPipsMaxHint) + "p)", style=label.style_label_right, color=color.new(color.red, 0), textcolor=color.white)
+    alert("BLUE3 ENTRY NOW | " + chartSym + " dir=" + str.tostring(chartDir) + " grade=" + activeGrade + " score=" + str.tostring(chartScore) + " entry=" + str.tostring(entry) + " TP=" + str.tostring(tp) + " SL=" + str.tostring(sl) + " BOS=" + str.tostring(chartBos), alert.freq_once_per_bar_close)
+    if showBlue3Label
+        lb = label.new(bar_index, low, "BLUE3 ENTRY NOW", style=label.style_label_up, color=color.new(color.blue, 60), textcolor=color.white, size=size.small)
+        array.push(signalLabels, lb)
+
+// Lifecycle cleanup
+if lineLifecycle == "Session End" and not array.get(arrInNy, chartIdx)
+    if not na(entryLine)
+        line.delete(entryLine)
+        entryLine := na
+    if not na(tpLine)
+        line.delete(tpLine)
+        tpLine := na
+    if not na(slLine)
+        line.delete(slLine)
+        slLine := na
+while array.size(signalLabels) > maxSignalLabels
+    oldLb = array.shift(signalLabels)
+    if not na(oldLb)
+        label.delete(oldLb)
+
+dayChanged = ta.change(dayofmonth(time, timezoneInput)) != 0
+if lineLifecycle == "Day End" and dayChanged
+    if not na(entryLine)
+        line.delete(entryLine)
+        entryLine := na
+    if not na(tpLine)
+        line.delete(tpLine)
+        tpLine := na
+    if not na(slLine)
+        line.delete(slLine)
+        slLine := na
+
+// Chart marks
+
+
+if shouldDraw and drawRectangleBox
+    rectTop = array.get(arrRectHH, chartIdx)
+    rectBot = array.get(arrRectLL, chartIdx)
+    isFgdToday = array.get(arrIsFgd, chartIdx)
+    isFrdToday = array.get(arrIsFrd, chartIdx)
+    if (isFgdToday or isFrdToday) and not na(rectTop) and not na(rectBot)
+        if not na(rectBox)
+            box.delete(rectBox)
+        rectColor = isFgdToday ? color.new(color.green, 70) : color.new(color.red, 70)
+        rectBox := box.new(left=bar_index - rectLookbackBars, right=bar_index, top=math.max(rectTop, rectBot), bottom=math.min(rectTop, rectBot), bgcolor=rectColor, border_color=color.new(rectColor, 0))
+
+chartBosTime = array.get(arrBosTime, chartIdx)
+if shouldDraw and not na(chartBosTime) and chartBosTime != lastDrawnBosTime
+    lastDrawnBosTime := chartBosTime
+    if not na(bosLine)
+        line.delete(bosLine)
+    bosLine := line.new(bar_index, array.get(arrBosLevel, chartIdx), bar_index + 50, array.get(arrBosLevel, chartIdx), color=color.new(color.yellow, 0), width=2)
+
+chartFvgTime = array.get(arrFvgTime, chartIdx)
+if shouldDraw and not na(chartFvgTime) and chartFvgTime != lastDrawnFvgTime
+    lastDrawnFvgTime := chartFvgTime
+    if not na(fvgBox)
+        box.delete(fvgBox)
+    fU = array.get(arrFvgU, chartIdx)
+    fL = array.get(arrFvgL, chartIdx)
+    if not na(fU) and not na(fL)
+        fvgBox := box.new(left=bar_index, top=math.max(fU,fL), right=bar_index + 30, bottom=math.min(fU,fL), bgcolor=color.new(color.aqua, 85), border_color=color.new(color.aqua, 30))
+
+asiaHChart = array.get(arrAsiaH, chartIdx)
+asiaLChart = array.get(arrAsiaL, chartIdx)
+plot(asiaHChart, "Asia High", color=color.new(color.orange, 0), linewidth=1)
+plot(asiaLChart, "Asia Low", color=color.new(color.orange, 0), linewidth=1)
+plot(array.get(arrBosLevel, chartIdx), "BOS Level", color=color.new(color.yellow, 0), linewidth=2, style=plot.style_linebr)
+
+scannerFgdNow = array.get(arrScannerFgdPulse, chartIdx)
+scannerFrdNow = array.get(arrScannerFrdPulse, chartIdx)
+scannerTradeNow = array.get(arrScannerTradePulse, chartIdx)
+plotshape(scannerFgdNow, title="FGD Scanner", text="FGD*", style=shape.labelup, location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.white, size=size.tiny)
+plotshape(scannerFrdNow, title="FRD Scanner", text="FRD*", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 0), textcolor=color.white, size=size.tiny)
+plotshape(scannerTradeNow, title="TRADE DAY", text="TRADE DAY", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
+
+blockedChart = array.get(arrBlocked, chartIdx)
+if not showBlockedLabels and not na(blockedLbl)
+    label.delete(blockedLbl)
+    blockedLbl := na
+if showBlockedLabels and barstate.islast
+    if not na(blockedLbl)
+        label.delete(blockedLbl)
+        blockedLbl := na
+    if blockedChart != "" and (not tradeDayOnly or array.get(arrIsTradeDay, chartIdx))
+        blockedLbl := label.new(bar_index, high, "BLOCKED: " + blockedChart, style=label.style_label_down, color=color.new(color.red, 80), textcolor=color.white, size=size.tiny)
+
+// =============================
+// Dashboard
+// =============================
+var table dash = table.new(position.top_right, 15, 7, border_width=1)
+if barstate.islast
+    table.cell(dash, 0, 0, "SB Dashboard", bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 1, 0, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades), bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 2, 0, "Used Symbols: " + todaySym1 + " " + todaySym2, bgcolor=color.new(color.black, 0), text_color=color.white)
+    table.cell(dash, 3, 0, focusMode ? "Focus: " + str.tostring(focusY) + "-" + str.tostring(focusM) + "-" + str.tostring(focusD) + " 09:30" : "Focus: Live", bgcolor=color.new(color.black, 0), text_color=color.white)
+    headers = array.from("Symbol", "Bias【SB必要】", "MRN", "NY", "Asia", "Sweep", "BOS", "FVG", "Retest", "Blue1", "Blue2", "Blue3", "ScoreA", "ScoreA+", "State")
+    for c = 0 to 14
+        table.cell(dash, c, 1, array.get(headers, c), bgcolor=color.new(color.silver, 20))
+    for r = 0 to 3
+        sym = mode == "Chart(single)" ? chartTickerStd : ticker.standard(array.get(arrSyms, r))
+        bias = array.get(arrBias, r)
+        btxt = bias == 1 ? "FGD" : bias == -1 ? "FRD" : "NONE"
+        st = array.get(arrState, r)
+        mrnTxt = mrnBlock ? "BLOCK" : "OK"
+        nyTxt = array.get(arrInNy, r) ? "IN" : "OUT"
+        swTxt = str.tostring(array.get(arrSweepDir, r))
+        bosTxt = str.tostring(array.get(arrBosDir, r)) + "@" + str.tostring(array.get(arrBosLevel, r))
+        fvgTxt = useFvg ? (array.get(arrFvgMit, r) ? "Mit" : (not na(array.get(arrFvgU, r)) ? "Found" : "No")) : "Skip"
+        retTxt = st >= STATE_WAIT_RETEST ? "Wait/Hit" : "-"
+        b1t = not na(array.get(arrBlue1T, r)) ? "●" : "-"
+        b2t = not na(array.get(arrBlue2T, r)) ? "●" : "-"
+        b3t = not na(array.get(arrBlue3T, r)) ? "●" : "-"
+        table.cell(dash, 0, r + 2, sym)
+        table.cell(dash, 1, r + 2, btxt)
+        table.cell(dash, 2, r + 2, mrnTxt)
+        table.cell(dash, 3, r + 2, nyTxt)
+        table.cell(dash, 4, r + 2, st >= STATE_ASIA_READY ? "Y" : "N")
+        table.cell(dash, 5, r + 2, swTxt)
+        table.cell(dash, 6, r + 2, bosTxt)
+        table.cell(dash, 7, r + 2, fvgTxt)
+        table.cell(dash, 8, r + 2, retTxt)
+        table.cell(dash, 9, r + 2, b1t)
+        table.cell(dash, 10, r + 2, b2t)
+        table.cell(dash, 11, r + 2, b3t)
+        table.cell(dash, 12, r + 2, str.tostring(array.get(arrScoreA, r), "#.0"))
+        table.cell(dash, 13, r + 2, str.tostring(array.get(arrScoreAPlus, r), "#.0"))
+        hiddenTxt = array.get(arrDisplayOk, r) ? "" : " Hidden <" + str.tostring(minScoreToDisplay)
+        reasonTxt = array.get(arrGreatReason, r)
+        table.cell(dash, 14, r + 2, f_stateName(st) + hiddenTxt + (reasonTxt != "" ? " | " + reasonTxt : ""))
+
+// Training mode notes
+missNoBos = trainingMode and array.get(arrSweepCount, chartIdx) > array.get(arrBosCount, chartIdx)
+missNoFvg = trainingMode and useFvg and array.get(arrBosCount, chartIdx) > array.get(arrFvgCount, chartIdx)
+missNoMit = trainingMode and useFvg and array.get(arrFvgCount, chartIdx) > array.get(arrMitCount, chartIdx)
+missNoReaction = trainingMode and array.get(arrB1Count, chartIdx) > array.get(arrB2Count, chartIdx)
+missNoEma = trainingMode and array.get(arrB2Count, chartIdx) > array.get(arrB3Count, chartIdx)
+plotshape(missNoBos, title="MISS No BOS", text="No BOS", style=shape.xcross, location=location.abovebar, color=color.new(color.red, 0), size=size.tiny)
+plotshape(missNoFvg, title="MISS No FVG", text="No FVG", style=shape.xcross, location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
+plotshape(missNoMit, title="MISS No Mit", text="No MIT", style=shape.xcross, location=location.abovebar, color=color.new(color.yellow, 0), size=size.tiny)
+plotshape(missNoReaction, title="MISS No Reaction", text="No R2", style=shape.xcross, location=location.abovebar, color=color.new(color.fuchsia, 0), size=size.tiny)
+plotshape(missNoEma, title="MISS No EMA", text="No EMA", style=shape.xcross, location=location.abovebar, color=color.new(color.purple, 0), size=size.tiny)
+
+// 教學說明（新手）
+plotchar(na, title="SB Bias【SB必要】why: FGD/FRD 三日結構決定偏多偏空", char=' ')
+plotchar(na, title="EMA20 Entry【SB必要】why: SB 入場K線確認", char=' ')
+plotchar(na, title="Timing【SB必要精神】why: 只在NY時段確認", char=' ')
+plotchar(na, title="MRN【SB必要】why: 重大新聞前避免交易", char=' ')
+plotchar(na, title="Sweep【加分】why: 先掃流動性再轉向", char=' ')
+plotchar(na, title="BOS【加分】why: 結構轉向已被確認", char=' ')
+plotchar(na, title="FVG Mitigation【加分】why: 等不平衡回補提升RR", char=' ')
+plotchar(na, title="Blue1/2/3【操作指引】why: 逐步確認, Blue3手動按單", char=' ')

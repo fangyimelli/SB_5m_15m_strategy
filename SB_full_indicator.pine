@@ -105,6 +105,13 @@ minScoreToDisplay = input.int(70, "Min score to display", minval=0, maxval=100)
 showDaytypeLabels = input.bool(true, "Show FRD/FGD/TradeDay labels")
 focusHideDaytype = input.bool(false, "Focus hide FRD/FGD/TradeDay")
 
+show_hud = input.bool(true, "Show HUD")
+hud_x_bars_offset = input.int(30, "HUD X bars offset", minval=1, maxval=500)
+hud_y_anchor = input.string("LastPrice", "HUD Y anchor", options=["LastPrice", "High", "Low"])
+hud_bg_opacity = input.int(70, "HUD background opacity", minval=0, maxval=100)
+hud_text_size = input.string("small", "HUD text size", options=["tiny", "small", "normal", "large"])
+hud_align = input.string("left", "HUD align", options=["left", "center", "right"])
+
 // =============================
 // Constants / enums
 // =============================
@@ -141,6 +148,18 @@ f_stateName(_s) =>
       _s == STATE_BLUE1 ? "BLUE1" :
       _s == STATE_BLUE2 ? "BLUE2" :
       _s == STATE_BLUE3 ? "BLUE3" : "DONE"
+
+
+f_mark(_ok) => _ok ? "✅" : "⛔"
+
+f_hudSize(_sz) =>
+    _sz == "tiny" ? size.tiny :
+      _sz == "small" ? size.small :
+      _sz == "large" ? size.large : size.normal
+
+f_hudTextAlign(_align) =>
+    _align == "center" ? text.align_center :
+      _align == "right" ? text.align_right : text.align_left
 
 f_wickReject(_dir, _o, _h, _l, _c) =>
     rng = math.max(_h - _l, syminfo.mintick)
@@ -579,6 +598,7 @@ var box fvgBox = na
 var label tpLbl = na
 var label slLbl = na
 var label[] signalLabels = array.new_label()
+var label hudLbl = na
 var int lastDrawnBosTime = na
 var int lastDrawnFvgTime = na
 var int dedupeBar = na
@@ -742,6 +762,40 @@ plotshape(scannerFrdNow, title="FRD Scanner", text="FRD*", style=shape.labeldown
 plotshape(scannerTradeNow, title="TRADE DAY", text="TRADE DAY", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
 
 blockedChart = array.get(arrBlocked, chartIdx)
+
+// =============================
+// HUD (single label, last bar updates only)
+// =============================
+if barstate.islast
+    if show_hud
+        stHud = array.get(arrState, chartIdx)
+        scoreAHud = array.get(arrScoreA, chartIdx)
+        scoreAPlusHud = array.get(arrScoreAPlus, chartIdx)
+        hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
+        hudX = bar_index - hud_x_bars_offset
+        hudTxt = "SB HUD\n" +
+          "BOS " + f_mark(stHud >= STATE_BOS_CONFIRMED) +
+          " | FVG " + f_mark(useFvg ? array.get(arrFvgMit, chartIdx) : true) +
+          " | Retest " + f_mark(stHud >= STATE_BLUE1) + "\n" +
+          "Blue1 " + f_mark(stHud >= STATE_BLUE1) +
+          " | Blue2 " + f_mark(stHud >= STATE_BLUE2) +
+          " | Blue3 " + f_mark(stHud >= STATE_BLUE3) + "\n" +
+          "ScoreA " + f_mark(scoreAHud >= scoreThresholdA) + " (" + str.tostring(scoreAHud, "#.0") + ")" +
+          " | ScoreA+ " + f_mark(scoreAPlusHud >= scoreThresholdAPlus) + " (" + str.tostring(scoreAPlusHud, "#.0") + ")" + "\n" +
+          "入場規則=Blue3✅才手動進場"
+        if na(hudLbl)
+            hudLbl := label.new(hudX, hudY, hudTxt, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, textalign=f_hudTextAlign(hud_align), color=color.new(color.black, hud_bg_opacity), textcolor=color.white, size=f_hudSize(hud_text_size))
+        else
+            label.set_xy(hudLbl, hudX, hudY)
+            label.set_text(hudLbl, hudTxt)
+            label.set_style(hudLbl, label.style_label_left)
+            label.set_textalign(hudLbl, f_hudTextAlign(hud_align))
+            label.set_color(hudLbl, color.new(color.black, hud_bg_opacity))
+            label.set_textcolor(hudLbl, color.white)
+            label.set_size(hudLbl, f_hudSize(hud_text_size))
+    else if not na(hudLbl)
+        label.delete(hudLbl)
+        hudLbl := na
 
 // =============================
 // Dashboard

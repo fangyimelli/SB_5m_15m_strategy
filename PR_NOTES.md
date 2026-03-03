@@ -1,6 +1,10 @@
 # PR Notes
 
 ## What changed (latest)
+- Pinned HUD defaults/update behavior for stable center-left display and memory safety:
+  - Defaults: `show_hud=true`, `hud_x_bars_offset=30`, `hud_y_anchor="LastPrice"`, `hud_bg_opacity=70`, `hud_text_size="small"`, `hud_align="left"`.
+  - Enforced HUD refresh only on `barstate.islast` and reuses a single `var label hudLbl` via `label.set_xy` + `label.set_text`.
+  - HUD keeps BOS/FVG/Retest/Blue1/2/3/ScoreA/ScoreA+ ✅/⛔ rows and preserves `入場規則=Blue3✅才手動進場`.
 - Added **backtestable Focus Trade Day** flow on current branch (no new branch):
   - Day2 remains FRD/FGD.
   - Day3 is Trade Day (`tradeDayToday = FRD_yesterday OR FGD_yesterday`).

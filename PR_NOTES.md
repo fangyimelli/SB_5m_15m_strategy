@@ -2,6 +2,14 @@
 
 ## What changed (latest)
 
+- 2026-03-03 Focus HUD diagnostics for `foundSnap=N` root-cause:
+  - Added `debugMode` input to gate verbose HUD diagnostics; `debugMode=false` keeps clean HUD.
+  - Added focus debug vars near focus block: `focus_input_raw_ts`, UTC `focusY/M/D`, `focusAnchorNY`, `focusDayKeyDbg`.
+  - Added fixed 5m debug tuple `request.security(syminfo.tickerid, "5", [time, inNy5, inAsia5, f_dayKey(time, timezoneInput)])`.
+  - Persisted last 5m values in vars: `lastT5/lastDayKey5/lastInNy5/lastInAsia5/lastCondFocusDay5/lastCondFocusNY5`.
+  - Added cumulative `nyBarsInFocusDay` counter (`condFocusNY5` true => +1) for quick non-zero validation.
+  - HUD debug block now shows: focus raw ts, UTC YMD, NY anchor date, focus day key, last 5m time/dayKey/inNy, condition flags, NY bar count, `stSnap_isNA` and `stSnap` value when present.
+
 - 2026-03-03 Follow-up focus condition consistency:
   - Renamed focus 5m session flag to `inNy5` and set `condFocusNY5 = (barDayKey5 == focusDayKey) and inNy5` for direct parity with implementation spec.
   - Keeps focus HUD snapshot source fixed at 5m and independent from chart timeframe.

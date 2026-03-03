@@ -106,6 +106,7 @@ focusHideDaytype = input.bool(false, "Focus hide FRD/FGD/TradeDay")
 
 show_hud = input.bool(true, "Show HUD")
 hud_show_focus_debug = input.bool(true, "HUD show focus debug")
+debugMode = input.bool(false, "Debug mode (focus HUD diagnostics)")
 hud_x_bars_offset = input.int(30, "HUD X bars offset", minval=1, maxval=500)
 hud_y_anchor = input.string("High", "HUD Y anchor", options=["LastPrice", "High", "Low"])
 hud_bg_opacity = input.int(70, "HUD background opacity", minval=0, maxval=100)
@@ -285,12 +286,37 @@ focusM = month(focusSourceTs, timezoneInput)
 focusD = dayofmonth(focusSourceTs, timezoneInput)
 focusAnchor = timestamp(timezoneInput, focusY, focusM, focusD, 9, 30)
 focusDayKey = f_dayKey(focusAnchor, timezoneInput)
+
+focus_input_raw_ts = focus_input == 0 ? timenow : focus_input
+focusY_UTC = year(focus_input_raw_ts, "UTC")
+focusM_UTC = month(focus_input_raw_ts, "UTC")
+focusD_UTC = dayofmonth(focus_input_raw_ts, "UTC")
+focusAnchorNY = timestamp(timezoneInput, focusY_UTC, focusM_UTC, focusD_UTC, 9, 30)
+focusDayKeyDbg = f_dayKey(focusAnchorNY, timezoneInput)
+
 barDayKey = f_dayKey(time, timezoneInput)
 condFocusDay = barDayKey == focusDayKey
-[t5, inNy5] = request.security(syminfo.tickerid, "5", [time, not na(time("5", nySession, timezoneInput))])
-barDayKey5 = f_dayKey(t5, timezoneInput)
-condFocusDay5 = barDayKey5 == focusDayKey
-condFocusNY5 = (barDayKey5 == focusDayKey) and inNy5
+[t5, inNy5, inAsia5Dbg, dayKey5] = request.security(syminfo.tickerid, "5", [time, not na(time("5", nySession, timezoneInput)), not na(time("5", asiaSession, timezoneInput)), f_dayKey(time, timezoneInput)])
+condFocusDay5 = dayKey5 == focusDayKey
+condFocusNY5 = condFocusDay5 and inNy5
+
+var int lastT5 = na
+var int lastDayKey5 = na
+var bool lastInNy5 = false
+var bool lastInAsia5 = false
+var bool lastCondFocusDay5 = false
+var bool lastCondFocusNY5 = false
+var int nyBarsInFocusDay = 0
+
+lastT5 := t5
+lastDayKey5 := dayKey5
+lastInNy5 := inNy5
+lastInAsia5 := inAsia5Dbg
+lastCondFocusDay5 := condFocusDay5
+lastCondFocusNY5 := condFocusNY5
+if condFocusNY5
+    nyBarsInFocusDay += 1
+
 sessMinutes = f_session_minutes(nySession)
 focusNYStart = focusAnchor
 focusNYEnd = focusNYStart + sessMinutes * 60000
@@ -804,7 +830,20 @@ if barstate.islast
         hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
         hudX = bar_index - hud_x_bars_offset
         hudTxt = "焦點日快照=" + focusDateText + " 09:30 NY\n" +
-          (hud_show_focus_debug ? ("focusDayKey=" + str.tostring(focusDayKey) + " | foundSnap=" + (foundSnap ? "Y" : "N") + (na(lastNYBarTimeUsed) ? "" : " | lastNYBarTimeUsed=" + str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n") : "") +
+          (debugMode ? (
+          "focus_input_raw_ts=" + str.format_time(focus_input_raw_ts, "yyyy-MM-dd HH:mm", "UTC") + " UTC\n" +
+          "focusYMD_UTC=" + str.tostring(focusY_UTC) + "-" + str.tostring(focusM_UTC, "00") + "-" + str.tostring(focusD_UTC, "00") + "\n" +
+          "focusAnchorNY=" + str.format_time(focusAnchorNY, "yyyy-MM-dd", timezoneInput) + "\n" +
+          "focusDayKey=" + str.tostring(focusDayKeyDbg) + "\n" +
+          "last t5=" + (na(lastT5) ? "—" : str.format_time(lastT5, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n" +
+          "last dayKey5=" + str.tostring(lastDayKey5) + " | last inNy5=" + f_mark(lastInNy5) + " | last inAsia5=" + f_mark(lastInAsia5) + "\n" +
+          "condFocusDay5_last=" + f_mark(lastCondFocusDay5) + "\n" +
+          "condFocusNY5_last=" + f_mark(lastCondFocusNY5) + "\n" +
+          "nyBarsInFocusDay=" + str.tostring(nyBarsInFocusDay) + "\n" +
+          "stSnap_isNA=" + f_mark(not na(stSnap)) +
+          (not na(stSnap) ? " | stSnap=" + str.tostring(stSnap) : "") +
+          (na(lastNYBarTimeUsed) ? "" : "\nlastNYBarTimeUsed=" + str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n"
+          ) : (hud_show_focus_debug ? ("focusDayKey=" + str.tostring(focusDayKey) + " | foundSnap=" + (foundSnap ? "Y" : "N") + (na(lastNYBarTimeUsed) ? "" : " | lastNYBarTimeUsed=" + str.format_time(lastNYBarTimeUsed, "yyyy-MM-dd HH:mm", timezoneInput)) + "\n") : "")) +
           "TradeDay=" + tradeDayText + "\n" +
           "Grade=" + gradeHud + "\n" +
           "NY=" + nyText + "\n" +

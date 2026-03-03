@@ -99,7 +99,6 @@ tradeDayOnly = input.bool(true, "Trade Day only (enable full flow only on Trade 
 focus_mode = input.bool(false, "Focus mode (NY 09:30 anchor)")
 focus_input = input.time(0, "Focus trade day NY 09:30 (0 = today)")
 allow_alerts_in_focus = input.bool(false, "Allow alerts in focus mode")
-debugMode = input.bool(false, "Debug mode (dashboard-only daytype diagnostics)")
 
 minScoreToDisplay = input.int(70, "Min score to display", minval=0, maxval=100)
 showDaytypeLabels = input.bool(true, "Show FRD/FGD/TradeDay labels")
@@ -107,7 +106,7 @@ focusHideDaytype = input.bool(false, "Focus hide FRD/FGD/TradeDay")
 
 show_hud = input.bool(true, "Show HUD")
 hud_x_bars_offset = input.int(30, "HUD X bars offset", minval=1, maxval=500)
-hud_y_anchor = input.string("LastPrice", "HUD Y anchor", options=["LastPrice", "High", "Low"])
+hud_y_anchor = input.string("High", "HUD Y anchor", options=["LastPrice", "High", "Low"])
 hud_bg_opacity = input.int(70, "HUD background opacity", minval=0, maxval=100)
 hud_text_size = input.string("small", "HUD text size", options=["tiny", "small", "normal", "large"])
 hud_align = input.string("left", "HUD align", options=["left", "center", "right"])
@@ -619,7 +618,7 @@ if na(dedupeBar) or bar_index != dedupeBar
     firedB3Bar := false
 
 showSignalsOnly = showChartLabels == "Signals only"
-showBlue12Labels = showSignalsOnly
+showBlue12Labels = false
 showBlue3Label = true
 
 if b1NowChart and not firedB1Bar and not f_inCooldown(array.get(arrLastAlertB1, chartIdx), cooldownBlue1) and (not focus_mode or (allow_alerts_in_focus and isInFocusDay))
@@ -687,7 +686,9 @@ if lineLifecycle == "Session End" and not array.get(arrInNy, chartIdx)
     if not na(slLbl)
         label.delete(slLbl)
         slLbl := na
-while array.size(signalLabels) > math.min(maxSignalLabels, maxLabelsCap)
+reservedLabels = 2
+capForSignals = math.min(maxSignalLabels, math.max(1, maxLabelsCap - reservedLabels))
+while array.size(signalLabels) > capForSignals
     oldLb = array.shift(signalLabels)
     if not na(oldLb)
         label.delete(oldLb)
@@ -755,8 +756,8 @@ plot(focus_mode and not isInFocusDay ? na : array.get(arrBosLevel, chartIdx), "B
 scannerFgdNow = array.get(arrScannerFgdPulse, chartIdx)
 scannerFrdNow = array.get(arrScannerFrdPulse, chartIdx)
 scannerTradeNow = array.get(arrScannerTradePulse, chartIdx)
-plotshape(scannerFgdNow, title="FGD Scanner", text="FGD*", style=shape.labelup, location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.white, size=size.tiny)
-plotshape(scannerFrdNow, title="FRD Scanner", text="FRD*", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 0), textcolor=color.white, size=size.tiny)
+plotshape(scannerFgdNow, title="FGD Scanner", text="FGD", style=shape.labelup, location=location.belowbar, color=color.new(color.teal, 0), textcolor=color.white, size=size.tiny)
+plotshape(scannerFrdNow, title="FRD Scanner", text="FRD", style=shape.labeldown, location=location.abovebar, color=color.new(color.maroon, 0), textcolor=color.white, size=size.tiny)
 plotshape(scannerTradeNow, title="TRADE DAY", text="TRADE DAY", style=shape.labelup, location=location.belowbar, color=color.new(color.green, 0), textcolor=color.white, size=size.tiny)
 
 blockedChart = array.get(arrBlocked, chartIdx)
@@ -770,28 +771,31 @@ if barstate.islast
         scoreAHud = array.get(arrScoreA, chartIdx)
         scoreAPlusHud = array.get(arrScoreAPlus, chartIdx)
         tradeDayHud = array.get(arrIsTradeDay, chartIdx)
+        inNyHud = array.get(arrInNy, chartIdx)
         focusMasked = focus_mode and not isInFocusDay
+        gradeHud = scoreAPlusHud >= scoreThresholdAPlus ? "A+" : "A"
         bosText = focusMasked ? "—" : f_mark(stHud >= STATE_BOS_CONFIRMED)
-        fvgText = focusMasked ? "—" : f_mark(useFvg ? array.get(arrFvgMit, chartIdx) : true)
+        fvgText = focusMasked ? "—" : (useFvg ? f_mark(array.get(arrFvgMit, chartIdx)) : "—")
         retestText = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE1)
         blue1Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE1)
         blue2Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE2)
         blue3Text = focusMasked ? "—" : f_mark(stHud >= STATE_BLUE3)
-        scoreAText = focusMasked ? "—" : f_mark(scoreAHud >= scoreThresholdA) + " (" + str.tostring(scoreAHud, "#.0") + ")"
-        scoreAPlusText = focusMasked ? "—" : f_mark(scoreAPlusHud >= scoreThresholdAPlus) + " (" + str.tostring(scoreAPlusHud, "#.0") + ")"
-        tradeDayText = focusMasked ? "—" : (tradeDayHud ? "Y" : "N")
+        tradeDayText = focusMasked ? "—" : f_mark(tradeDayHud)
+        nyText = focusMasked ? "—" : f_mark(inNyHud)
         hudY = hud_y_anchor == "High" ? high : hud_y_anchor == "Low" ? low : close
         hudX = bar_index - hud_x_bars_offset
-        hudTxt = "SB HUD\n" +
-          "BOS " + bosText +
-          " | FVG " + fvgText +
-          " | Retest " + retestText + "\n" +
-          "Blue1 " + blue1Text +
-          " | Blue2 " + blue2Text +
-          " | Blue3 " + blue3Text + "\n" +
-          "ScoreA " + scoreAText +
-          " | ScoreA+ " + scoreAPlusText + "\n" +
-          "Focus anchor(Y-M-D)=" + focusDateText + " 09:30 NY | tradeDayToday=" + tradeDayText + "\n" +
+        hudTxt = "日期=" + focusDateText + " 09:30 NY\n" +
+          "TradeDay=" + tradeDayText + "\n" +
+          "Grade=" + gradeHud + "\n" +
+          "NY=" + nyText + "\n" +
+          "BOS=" + bosText + "\n" +
+          "FVG=" + fvgText + "\n" +
+          "Retest=" + retestText + "\n" +
+          "Blue1=" + blue1Text + "\n" +
+          "Blue2=" + blue2Text + "\n" +
+          "Blue3=" + blue3Text + "\n" +
+          "ScoreA=" + (focusMasked ? "—" : str.tostring(scoreAHud, "#.0")) + "\n" +
+          "ScoreA+=" + (focusMasked ? "—" : str.tostring(scoreAPlusHud, "#.0")) + "\n" +
           "入場規則=Blue3✅才手動進場"
         if na(hudLbl)
             hudLbl := label.new(hudX, hudY, hudTxt, xloc=xloc.bar_index, yloc=yloc.price, style=label.style_label_left, textalign=f_hudTextAlign(hud_align), color=color.new(color.black, hud_bg_opacity), textcolor=color.white, size=f_hudSize(hud_text_size))
@@ -806,48 +810,6 @@ if barstate.islast
     else if not na(hudLbl)
         label.delete(hudLbl)
         hudLbl := na
-
-// =============================
-// Dashboard
-// =============================
-var table dash = table.new(position.top_right, 7, 4, border_width=1)
-if barstate.isfirst
-    table.cell(dash, 0, 0, "SB Dashboard", bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 1, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 2, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 3, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 4, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 5, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
-    table.cell(dash, 6, 0, "", bgcolor=color.new(color.black, 0), text_color=color.white)
-
-if barstate.islast
-    st = array.get(arrState, 0)
-    tradeDayFlag = array.get(arrIsTradeDay, 0)
-    scoreA0 = array.get(arrScoreA, 0)
-    scoreAPlus0 = array.get(arrScoreAPlus, 0)
-    gradeTxt = scoreAPlus0 >= scoreThresholdAPlus ? "A+" : scoreA0 >= scoreThresholdA ? "A" : "A"
-    hiddenTxt = array.get(arrDisplayOk, 0) ? "N" : "Y"
-    focusTitle = "FOCUS: " + focusDateText + " 09:30 NY | TradeDay=" + (tradeDayFlag ? "Y" : "N") + " | Grade=" + gradeTxt + " | Hidden<" + str.tostring(minScoreToDisplay) + "=" + hiddenTxt
-    table.cell_set_text(dash, 0, 0, focusTitle)
-    table.cell_set_text(dash, 0, 1, "Progress")
-    table.cell_set_text(dash, 1, 1, "Asia")
-    table.cell_set_text(dash, 2, 1, "Sweep")
-    table.cell_set_text(dash, 3, 1, "BOS")
-    table.cell_set_text(dash, 4, 1, "FVG")
-    table.cell_set_text(dash, 5, 1, "Retest")
-    table.cell_set_text(dash, 6, 1, "Blue3")
-
-    table.cell_set_text(dash, 0, 2, "State=" + f_stateName(st) + " | ScoreA=" + str.tostring(scoreA0, "#.0") + " | ScoreA+=" + str.tostring(scoreAPlus0, "#.0"))
-    table.cell_set_text(dash, 1, 2, st >= STATE_ASIA_READY ? "🟦" : "·")
-    table.cell_set_text(dash, 2, 2, st >= STATE_SWEPT ? "🟦" : "·")
-    table.cell_set_text(dash, 3, 2, st >= STATE_BOS_CONFIRMED ? "🟦" : "·")
-    table.cell_set_text(dash, 4, 2, useFvg ? (array.get(arrFvgMit, 0) ? "🟦" : "·") : "skip")
-    table.cell_set_text(dash, 5, 2, st >= STATE_BLUE1 ? "🟦" : "·")
-    table.cell_set_text(dash, 6, 2, not na(array.get(arrBlue3T, 0)) ? "🟦" : "·")
-
-    table.cell_set_text(dash, 0, 3, "Grade=" + activeGrade + " | Used=" + str.tostring(todayTradeCount) + "/" + str.tostring(dailyMaxTrades) + " | Blocked=" + array.get(arrBlocked, 0))
-    for c = 1 to 6
-        table.cell_set_text(dash, c, 3, "")
 
 // Training mode notes
 missNoBos = trainingMode and array.get(arrSweepCount, chartIdx) > array.get(arrBosCount, chartIdx)

@@ -2,6 +2,14 @@
 
 ## What changed (latest)
 
+- 2026-03-03 Focus-mode NY snapshot timeframe fix (`foundSnap=N` / HUD all `—`):
+  - Root cause: focus snapshot condition used chart timeframe context, so `inNy` could stay false on higher TF (e.g. 1D).
+  - Added fixed 5m focus series: `t5 = request.security(syminfo.tickerid, "5", time)`, `inNy5Focus = request.security(syminfo.tickerid, "5", not na(time("5", nySession, timezoneInput)))`, `barDayKey5 = f_dayKey(t5, timezoneInput)`, `condFocusDay5`, `condFocusNY5`.
+  - In `focus_mode=true`, HUD snapshots now all use `condFocusNY5` for NY-session fields (`stSnap/scoreASnap/scoreAPlusSnap/fvgMitSnap/bosDirSnap/inNyHud`).
+  - TradeDay snapshot now uses whole-day condition `tradeDaySnap = ta.valuewhen(condFocusDay5, arrIsTradeDay, 0)` (does not require NY session).
+  - `foundSnap` now strictly means NY snapshot exists: `foundSnap = not na(stSnap)`; HUD only shows `—` when `foundSnap=false` (not because current bar is outside focus day).
+  - HUD debug line updated to `focusDayKey=... | foundSnap=Y/N | lastNYBar=...` via `lastNYBarTimeUsed`.
+
 - 2026-03-03 Focus HUD snapshot source fix (selected-day HUD, no last-bar mask):
   - Focus day key remains `focusDayKey = f_dayKey(focusAnchor, timezoneInput)` and `condFocusDay = barDayKey == focusDayKey`.
   - Added explicit snapshot series in HUD block: `stSnap`, `tradeDaySnap`, `scoreASnap`, `scoreAPlusSnap`, `fvgMitSnap`, `bosDirSnap` via `ta.valuewhen(condFocusDay, ..., 0)`.
